@@ -113,7 +113,7 @@ export default function Page() {
 
   // ✅ ВМЕСТО pay(): переходим на страницу выбора оплаты
   const goCheckout = (itemId: number) => {
-    router.push(`/checkout?itemId=${itemId}`);
+    router.push(`/checkout/${itemId}`);
   };
 
   const openSupport = () => {
