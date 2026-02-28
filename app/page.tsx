@@ -370,9 +370,9 @@ export default function Page() {
       {/* CSS for animated background */}
       <style jsx global>{`
         .bg-anim {
-          background: radial-gradient(60% 60% at 20% 20%, rgba(34, 211, 238, 0.35), transparent 60%),
-            radial-gradient(70% 70% at 80% 30%, rgba(59, 130, 246, 0.35), transparent 60%),
-            radial-gradient(60% 60% at 50% 90%, rgba(168, 85, 247, 0.28), transparent 60%),
+          background: radial-gradient(60% 60% at 20% 20%, rgba(34, 33, 34, 0.35), transparent 60%),
+            radial-gradient(70% 70% at 80% 30%, rgba(34, 33, 34, 0.35), transparent 60%),
+            radial-gradient(60% 60% at 50% 90%, rgba(34, 33, 34, 0.35), transparent 60%),
             conic-gradient(
               from 180deg at 50% 50%,
               rgba(34, 211, 238, 0.18),
