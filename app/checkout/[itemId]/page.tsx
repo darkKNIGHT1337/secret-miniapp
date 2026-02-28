@@ -1,6 +1,7 @@
 import CheckoutClient from "./CheckoutClient";
 
 export default function Page({ params }: { params: { itemId: string } }) {
-  const itemId = Number(params.itemId);
-  return <CheckoutClient itemId={Number.isFinite(itemId) ? itemId : 0} />;
+  const n = Number(params.itemId);
+  const itemId = Number.isFinite(n) ? n : 0;
+  return <CheckoutClient itemId={itemId} />;
 }

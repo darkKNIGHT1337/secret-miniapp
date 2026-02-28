@@ -121,7 +121,12 @@ export default function Page() {
     setReady(true);
   }, []);
 
-  const goCheckout = (itemId: number) => router.push(`/checkout/${itemId}`);
+  const goCheckout = (itemId: number) => {
+  try {
+    sessionStorage.setItem("checkout_itemId", String(itemId));
+  } catch {}
+  router.push(`/checkout/${itemId}`);
+};
 
   const openSupport = () => {
     const tg = window.Telegram?.WebApp;
