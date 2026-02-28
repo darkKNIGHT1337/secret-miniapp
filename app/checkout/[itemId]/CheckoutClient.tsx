@@ -93,6 +93,9 @@ export default function CheckoutClient({ itemId }: { itemId: number }) {
               <div className="mt-2 text-xs text-white/60">
                 WebApp: <b>{isWebApp ? "YES" : "NO"}</b>
               </div>
+              <div className="mt-1 text-xs text-white/60">
+                  itemId: <b>{itemId}</b>
+              </div>
             </div>
 
             <button
