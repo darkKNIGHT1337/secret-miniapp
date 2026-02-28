@@ -11,6 +11,15 @@ type Product = {
   tag?: string;
 };
 
+type PayItem = {
+  id: number;
+  title: string;
+  desc: string;
+  price: number; // отображаем в ₴
+  tag?: string;
+  section: "manuals" | "work";
+};
+
 type Section = "services" | "manuals" | "work";
 
 declare global {
@@ -23,28 +32,68 @@ export default function Page() {
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState<Section>("services");
 
+  // УСЛУГИ: только примерная цена + обращение в ЛС
   const products: Product[] = useMemo(
     () => [
       {
         id: 1,
-        title: "📘 Гайд / Мануал",
-        desc: "Структурно, по шагам. Доступ/файл сразу после покупки.",
-        price: 199,
-        tag: "TOP",
-      },
-      {
-        id: 2,
         title: "🧑‍💻 Услуга / Настройка",
         desc: "Сделаем быстро и аккуратно. Подходит для разовых задач.",
         price: 499,
         tag: "FAST",
       },
       {
+        id: 2,
+        title: "🛠 Разработка / Доработка",
+        desc: "Если нужно что-то кастомное под тебя — обсудим и сделаем.",
+        price: 999,
+        tag: "PRO",
+      },
+      {
         id: 3,
-        title: "⭐ Подписка 30 дней",
-        desc: "Доступ к обновлениям + бонусы. Самый выгодный вариант.",
+        title: "⭐ Поддержка / Сопровождение",
+        desc: "Поддержка, правки, улучшения. Удобно, если нужен постоянный контакт.",
         price: 299,
         tag: "BEST",
+      },
+    ],
+    []
+  );
+
+  // МАНУАЛЫ + ВОРК: товары с оплатой (бот будет выставлять инвойс)
+  const payItems: PayItem[] = useMemo(
+    () => [
+      {
+        id: 101,
+        section: "manuals",
+        title: "📘 Гайд / Мануал (Base)",
+        desc: "Структурно, по шагам. Выдача сразу после оплаты.",
+        price: 199,
+        tag: "TOP",
+      },
+      {
+        id: 102,
+        section: "manuals",
+        title: "📗 Гайд / Мануал (PRO)",
+        desc: "Более глубокая версия + дополнительные советы.",
+        price: 299,
+        tag: "PRO",
+      },
+      {
+        id: 201,
+        section: "work",
+        title: "💼 Ворк-пак (Start)",
+        desc: "Материалы/примеры. Доступ после оплаты.",
+        price: 499,
+        tag: "CASE",
+      },
+      {
+        id: 202,
+        section: "work",
+        title: "⭐ Ворк-пак (VIP)",
+        desc: "Расширенный набор + бонусы. Доступ после оплаты.",
+        price: 799,
+        tag: "VIP",
       },
     ],
     []
@@ -60,16 +109,17 @@ export default function Page() {
     setReady(true);
   }, []);
 
-  const buy = (p: Product) => {
+  // Оплата: отправляем боту сигнал "создай инвойс"
+  // В БОТЕ нужно обработать action="invoice" и itemId -> sendInvoice()
+  const pay = (item: PayItem) => {
     const tg = window.Telegram?.WebApp;
-    const payload = JSON.stringify({ action: "buy", productId: p.id });
+    const payload = JSON.stringify({ action: "invoice", itemId: item.id });
     if (tg?.sendData) tg.sendData(payload);
-    else alert(`Тест: купить "${p.title}" (открой через Telegram)`);
+    else alert(`Тест оплаты: "${item.title}" на ${item.price} ₴ (открой через Telegram)`);
   };
 
   const openSupport = () => {
     const tg = window.Telegram?.WebApp;
-    // можно поменять на твой @username
     const url = "https://t.me/cantworry";
     if (tg?.openTelegramLink) tg.openTelegramLink(url);
     else window.open(url, "_blank");
@@ -124,192 +174,138 @@ export default function Page() {
     </div>
   );
 
-  const Manuals = () => (
-    <div className="mt-5 grid gap-3">
-      <SectionTitle
-        title="📚 Мануалы"
-        desc="Инструкции, гайды, FAQ — всё в одном месте."
-      />
+  const Card = ({
+    title,
+    desc,
+    tag,
+    price,
+    priceNote,
+    actionText,
+    onAction,
+    idx,
+    hint,
+  }: {
+    title: string;
+    desc: string;
+    tag?: string;
+    price: string;
+    priceNote: string;
+    actionText: string;
+    onAction: () => void;
+    idx: number;
+    hint: string;
+  }) => (
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.06, duration: 0.35 }}
+      className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.05] p-4"
+    >
+      <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-white/10 blur-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <div className="pointer-events-none absolute -right-24 -bottom-24 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
-      {[
-        {
-          t: "🚀 Как пользоваться мини-аппом",
-          d: "Коротко: выбираешь раздел → нажимаешь → получаешь результат в боте.",
-          badge: "START",
-        },
-        {
-          t: "❓ FAQ",
-          d: "Ответы на частые вопросы (доступ, выдача, поддержка).",
-          badge: "HELP",
-        },
-        {
-          t: "🔒 Безопасность",
-          d: "Как мы работаем и что делать, если что-то пошло не так.",
-          badge: "SAFE",
-        },
-      ].map((x, idx) => (
-        <motion.div
-          key={x.t}
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: idx * 0.06, duration: 0.35 }}
-          className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.05] p-4"
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-bold">{title}</h3>
+            {tag && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
+                {tag}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-white/70">{desc}</p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <div className="text-lg font-extrabold">{price}</div>
+          <div className="text-[11px] text-white/45">{priceNote}</div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <div className="text-xs text-white/50">{hint}</div>
+
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={onAction}
+          className="rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2 text-sm font-extrabold text-[#07101a] shadow-[0_10px_30px_rgba(34,211,238,0.18)] hover:opacity-95"
         >
-          <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-white/10 blur-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-          <div className="pointer-events-none absolute -right-24 -bottom-24 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold">{x.t}</h3>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
-                  {x.badge}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-white/70">{x.d}</p>
-            </div>
-
-            <div className="shrink-0 text-right">
-              <div className="text-[11px] text-white/45">обновляется</div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <div className="text-xs text-white/50">📌 Можно заменить на твой текст</div>
-
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={openSupport}
-              className="rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2 text-sm font-extrabold text-[#07101a] shadow-[0_10px_30px_rgba(34,211,238,0.18)] hover:opacity-95"
-            >
-              В поддержку
-            </motion.button>
-          </div>
-        </motion.div>
-      ))}
-    </div>
+          {actionText}
+        </motion.button>
+      </div>
+    </motion.div>
   );
 
-  const Work = () => (
-    <div className="mt-5 grid gap-3">
-      <SectionTitle
-        title="💼 Ворк"
-        desc="Примеры работ, кейсы, отзывы. Можно сделать как портфолио."
-      />
+  const Manuals = () => {
+    const items = payItems.filter((x) => x.section === "manuals");
+    return (
+      <div className="mt-5 grid gap-3">
+        <SectionTitle title="📚 Мануалы" desc="Выбирай мануал и оплачивай 👇" />
 
-      {[
-        {
-          t: "🧩 Кейс: Telegram Mini App",
-          d: "Магазин с разделами, быстрый UX, подготовка к оплате.",
-          badge: "CASE",
-        },
-        {
-          t: "⚡ Автоматизация",
-          d: "Боты для заявок, выдачи, уведомлений и поддержки.",
-          badge: "AUTO",
-        },
-        {
-          t: "🌐 Web / лендинги",
-          d: "Простые страницы под продажи + аналитика.",
-          badge: "WEB",
-        },
-      ].map((x, idx) => (
-        <motion.div
-          key={x.t}
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: idx * 0.06, duration: 0.35 }}
-          className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.05] p-4"
-        >
-          <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-white/10 blur-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-          <div className="pointer-events-none absolute -right-24 -bottom-24 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+        {items.map((x, idx) => (
+          <Card
+            key={x.id}
+            idx={idx}
+            title={x.title}
+            desc={x.desc}
+            tag={x.tag}
+            price={`${x.price} ₴`}
+            priceNote="оплата в TG"
+            hint="⚡ Автовыдача после оплаты"
+            actionText="Оплатить"
+            onAction={() => pay(x)}
+          />
+        ))}
+      </div>
+    );
+  };
 
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold">{x.t}</h3>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
-                  {x.badge}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-white/70">{x.d}</p>
-            </div>
+  const Work = () => {
+    const items = payItems.filter((x) => x.section === "work");
+    return (
+      <div className="mt-5 grid gap-3">
+        <SectionTitle title="💼 Ворк" desc="Материалы/пакеты — оплачивай и получай в боте 👇" />
 
-            <div className="shrink-0 text-right">
-              <div className="text-[11px] text-white/45">витрина</div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <div className="text-xs text-white/50">✨ Можно добавить ссылки/кнопки</div>
-
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={openSupport}
-              className="rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2 text-sm font-extrabold text-[#07101a] shadow-[0_10px_30px_rgba(34,211,238,0.18)] hover:opacity-95"
-            >
-              Заказать
-            </motion.button>
-          </div>
-        </motion.div>
-      ))}
-    </div>
-  );
+        {items.map((x, idx) => (
+          <Card
+            key={x.id}
+            idx={idx}
+            title={x.title}
+            desc={x.desc}
+            tag={x.tag}
+            price={`${x.price} ₴`}
+            priceNote="оплата в TG"
+            hint="📩 Выдача после оплаты"
+            actionText="Оплатить"
+            onAction={() => pay(x)}
+          />
+        ))}
+      </div>
+    );
+  };
 
   const Services = () => (
     <div className="mt-5">
       <SectionTitle
         title="🛠 Услуги"
-        desc="Выбирай позицию ниже 👇 Нажмёшь «Купить» — бот получит заявку (дальше подключим оплату 💳)."
+        desc="Здесь цены примерные. Для точной цены — напиши в ЛС 👇"
       />
 
-      {/* Products */}
       <div className="grid gap-3">
         {products.map((p, idx) => (
-          <motion.div
+          <Card
             key={p.id}
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.06, duration: 0.35 }}
-            className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.05] p-4"
-          >
-            {/* glow */}
-            <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-white/10 blur-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-            <div className="pointer-events-none absolute -right-24 -bottom-24 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold">{p.title}</h3>
-                  {p.tag && (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
-                      {p.tag}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-white/70">{p.desc}</p>
-              </div>
-
-              <div className="shrink-0 text-right">
-                <div className="text-lg font-extrabold">{p.price} ₴</div>
-                <div className="text-[11px] text-white/45">фикс. цена</div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-xs text-white/50">
-                ✨ Быстро • 🔒 Безопасно • 📩 Выдача в боте
-              </div>
-
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => buy(p)}
-                className="rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2 text-sm font-extrabold text-[#07101a] shadow-[0_10px_30px_rgba(34,211,238,0.18)] hover:opacity-95"
-              >
-                Купить
-              </motion.button>
-            </div>
-          </motion.div>
+            idx={idx}
+            title={p.title}
+            desc={p.desc}
+            tag={p.tag}
+            price={`~${p.price} ₴`}
+            priceNote="примерно"
+            hint="💬 Уточнение и заказ — в личке"
+            actionText="Написать в ЛС"
+            onAction={openSupport}
+          />
         ))}
       </div>
     </div>
@@ -325,7 +321,6 @@ export default function Page() {
       </div>
 
       <div className="relative mx-auto max-w-[560px] px-4 py-5">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -335,9 +330,7 @@ export default function Page() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-extrabold tracking-tight">
-                  🛍 Secret Shop
-                </span>
+                <span className="text-xl font-extrabold tracking-tight">🛍 Secret Shop</span>
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/70">
                   mini app
                 </span>
@@ -349,14 +342,8 @@ export default function Page() {
 
             <div className="text-right">
               <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    ready ? "bg-emerald-400" : "bg-white/30"
-                  }`}
-                />
-                <span className="text-xs font-semibold text-white/70">
-                  {ready ? "online" : "loading"}
-                </span>
+                <span className={`h-2 w-2 rounded-full ${ready ? "bg-emerald-400" : "bg-white/30"}`} />
+                <span className="text-xs font-semibold text-white/70">{ready ? "online" : "loading"}</span>
               </div>
               <div className="mt-2 text-[11px] text-white/45">Kyiv time</div>
             </div>
@@ -379,7 +366,10 @@ export default function Page() {
           {/* Footer */}
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white/70">
             💬 Нужна помощь или кастомный запрос?{" "}
-            <button onClick={openSupport} className="font-bold underline underline-offset-4 hover:opacity-90">
+            <button
+              onClick={openSupport}
+              className="font-bold underline underline-offset-4 hover:opacity-90"
+            >
               Напиши в поддержку
             </button>
             .
@@ -390,21 +380,9 @@ export default function Page() {
       {/* CSS for animated background */}
       <style jsx global>{`
         .bg-anim {
-          background: radial-gradient(
-              60% 60% at 20% 20%,
-              rgba(34, 211, 238, 0.35),
-              transparent 60%
-            ),
-            radial-gradient(
-              70% 70% at 80% 30%,
-              rgba(59, 130, 246, 0.35),
-              transparent 60%
-            ),
-            radial-gradient(
-              60% 60% at 50% 90%,
-              rgba(168, 85, 247, 0.28),
-              transparent 60%
-            ),
+          background: radial-gradient(60% 60% at 20% 20%, rgba(34, 211, 238, 0.35), transparent 60%),
+            radial-gradient(70% 70% at 80% 30%, rgba(59, 130, 246, 0.35), transparent 60%),
+            radial-gradient(60% 60% at 50% 90%, rgba(168, 85, 247, 0.28), transparent 60%),
             conic-gradient(
               from 180deg at 50% 50%,
               rgba(34, 211, 238, 0.18),
@@ -435,11 +413,7 @@ export default function Page() {
         }
 
         .vignette {
-          background: radial-gradient(
-            120% 120% at 50% 10%,
-            transparent 40%,
-            rgba(0, 0, 0, 0.65) 100%
-          );
+          background: radial-gradient(120% 120% at 50% 10%, transparent 40%, rgba(0, 0, 0, 0.65) 100%);
         }
       `}</style>
     </div>
