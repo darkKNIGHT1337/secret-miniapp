@@ -1,57 +1,200 @@
 "use client";
 
-export default function Home() {
-  const products = [
-    { id: 1, name: "📘 Гайд", price: 199 },
-    { id: 2, name: "🧑‍💻 Услуга", price: 499 },
-    { id: 3, name: "⭐ Подписка", price: 299 },
-  ];
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 
-  const buy = (id: number) => {
-    alert("Покупка товара #" + id + " (потом подключим оплату)");
+type Product = {
+  id: number;
+  title: string;
+  desc: string;
+  price: number;
+  tag?: string;
+};
+
+declare global {
+  interface Window {
+    Telegram?: any;
+  }
+}
+
+export default function Page() {
+  const [ready, setReady] = useState(false);
+
+  const products: Product[] = useMemo(
+    () => [
+      {
+        id: 1,
+        title: "📘 Гайд / Мануал",
+        desc: "Структурно, по шагам. Доступ/файл сразу после покупки.",
+        price: 199,
+        tag: "TOP",
+      },
+      {
+        id: 2,
+        title: "🧑‍💻 Услуга / Настройка",
+        desc: "Сделаем быстро и аккуратно. Подходит для разовых задач.",
+        price: 499,
+        tag: "FAST",
+      },
+      {
+        id: 3,
+        title: "⭐ Подписка 30 дней",
+        desc: "Доступ к обновлениям + бонусы. Самый выгодный вариант.",
+        price: 299,
+        tag: "BEST",
+      },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      // Можно включить цвета темы TG (не обязательно)
+      // tg.setHeaderColor?.("#0b0f17");
+    }
+    setReady(true);
+  }, []);
+
+  const buy = (p: Product) => {
+    const tg = window.Telegram?.WebApp;
+    const payload = JSON.stringify({ action: "buy", productId: p.id });
+    if (tg?.sendData) tg.sendData(payload);
+    else alert(`Тест: купить "${p.title}" (открой через Telegram)`);
   };
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#0b0f17",
-      color: "white",
-      fontFamily: "system-ui",
-      padding: 20
-    }}>
-      <div style={{ maxWidth: 500, margin: "0 auto" }}>
-        <h1>🛍 Secret Shop</h1>
-        <p style={{ opacity: 0.7 }}>
-          Мини-магазин внутри Telegram
-        </p>
-
-        {products.map(p => (
-          <div key={p.id} style={{
-            background: "#141a24",
-            borderRadius: 16,
-            padding: 16,
-            marginTop: 12
-          }}>
-            <h3>{p.name}</h3>
-            <p>Цена: {p.price} ₴</p>
-            <button
-              onClick={() => buy(p.id)}
-              style={{
-                marginTop: 10,
-                padding: "8px 14px",
-                borderRadius: 10,
-                border: "none",
-                background: "#4c7cff",
-                color: "white",
-                fontWeight: "bold",
-                cursor: "pointer"
-              }}
-            >
-              Купить
-            </button>
-          </div>
-        ))}
+    <div className="relative min-h-screen overflow-hidden bg-[#070A12] text-white">
+      {/* Animated background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="bg-anim absolute -inset-[40%] opacity-70" />
+        <div className="noise absolute inset-0 opacity-[0.08]" />
+        <div className="vignette absolute inset-0" />
       </div>
+
+      <div className="relative mx-auto max-w-[560px] px-4 py-5">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="rounded-[28px] border border-white/10 bg-white/[0.06] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-extrabold tracking-tight">🛍 Secret Shop</span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/70">
+                  mini app
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-white/70">
+                Выбирай позицию ниже 👇<br />
+                Нажмёшь <b>Купить</b> — бот получит заявку (дальше подключим оплату 💳).
+              </p>
+            </div>
+
+            <div className="text-right">
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                <span className={`h-2 w-2 rounded-full ${ready ? "bg-emerald-400" : "bg-white/30"}`} />
+                <span className="text-xs font-semibold text-white/70">{ready ? "online" : "loading"}</span>
+              </div>
+              <div className="mt-2 text-[11px] text-white/45">Kyiv time</div>
+            </div>
+          </div>
+
+          {/* Products */}
+          <div className="mt-5 grid gap-3">
+            {products.map((p, idx) => (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.06, duration: 0.35 }}
+                className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.05] p-4"
+              >
+                {/* glow */}
+                <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-white/10 blur-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="pointer-events-none absolute -right-24 -bottom-24 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold">{p.title}</h3>
+                      {p.tag && (
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
+                          {p.tag}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-white/70">{p.desc}</p>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <div className="text-lg font-extrabold">{p.price} ₴</div>
+                    <div className="text-[11px] text-white/45">фикс. цена</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-xs text-white/50">
+                    ✨ Быстро • 🔒 Безопасно • 📩 Выдача в боте
+                  </div>
+
+                  <motion.button
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => buy(p)}
+                    className="rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-4 py-2 text-sm font-extrabold text-[#07101a] shadow-[0_10px_30px_rgba(34,211,238,0.18)] hover:opacity-95"
+                  >
+                    Купить
+                  </motion.button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white/70">
+            💬 Нужна помощь или кастомный запрос?{" "}
+            <span className="font-bold">Напиши в поддержку</span> (добавим кнопку позже).
+          </div>
+        </motion.div>
+      </div>
+
+      {/* CSS for animated background */}
+      <style jsx global>{`
+        .bg-anim {
+          background:
+            radial-gradient(60% 60% at 20% 20%, rgba(34, 211, 238, 0.35), transparent 60%),
+            radial-gradient(70% 70% at 80% 30%, rgba(59, 130, 246, 0.35), transparent 60%),
+            radial-gradient(60% 60% at 50% 90%, rgba(168, 85, 247, 0.28), transparent 60%),
+            conic-gradient(from 180deg at 50% 50%,
+              rgba(34,211,238,0.18),
+              rgba(59,130,246,0.18),
+              rgba(168,85,247,0.18),
+              rgba(34,211,238,0.18));
+          filter: blur(40px);
+          transform: translate3d(0,0,0);
+          animation: floaty 10s ease-in-out infinite alternate;
+        }
+
+        @keyframes floaty {
+          0% { transform: translate3d(-2%, -1%, 0) scale(1.02) rotate(-2deg); }
+          50% { transform: translate3d(2%, 1%, 0) scale(1.05) rotate(2deg); }
+          100% { transform: translate3d(-1%, 2%, 0) scale(1.03) rotate(-1deg); }
+        }
+
+        .noise {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+          background-size: 180px 180px;
+        }
+
+        .vignette {
+          background: radial-gradient(120% 120% at 50% 10%, transparent 40%, rgba(0,0,0,0.65) 100%);
+        }
+      `}</style>
     </div>
   );
 }
