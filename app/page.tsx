@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 
 type Product = {
   id: number;
@@ -31,6 +32,7 @@ declare global {
 export default function Page() {
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState<Section>("services");
+  const router = useRouter();
 
   // УСЛУГИ: только примерная цена + обращение в ЛС
   const products: Product[] = useMemo(
@@ -60,7 +62,7 @@ export default function Page() {
     []
   );
 
-  // МАНУАЛЫ + ВОРК: товары с оплатой (бот будет выставлять инвойс)
+  // МАНУАЛЫ + ВОРК: товары с оплатой
   const payItems: PayItem[] = useMemo(
     () => [
       {
@@ -109,13 +111,9 @@ export default function Page() {
     setReady(true);
   }, []);
 
-  // Оплата: отправляем боту сигнал "создай инвойс"
-  // В БОТЕ нужно обработать action="invoice" и itemId -> sendInvoice()
-  const pay = (item: PayItem) => {
-    const tg = window.Telegram?.WebApp;
-    const payload = JSON.stringify({ action: "invoice", itemId: item.id });
-    if (tg?.sendData) tg.sendData(payload);
-    else alert(`Тест оплаты: "${item.title}" на ${item.price} ₴ (открой через Telegram)`);
+  // ✅ ВМЕСТО pay(): переходим на страницу выбора оплаты
+  const goCheckout = (itemId: number) => {
+    router.push(`/checkout?itemId=${itemId}`);
   };
 
   const openSupport = () => {
@@ -241,7 +239,7 @@ export default function Page() {
     const items = payItems.filter((x) => x.section === "manuals");
     return (
       <div className="mt-5 grid gap-3">
-        <SectionTitle title="📚 Мануалы" desc="Выбирай мануал и оплачивай 👇" />
+        <SectionTitle title="📚 Мануалы" desc="Выбирай мануал и переходи к оплате 👇" />
 
         {items.map((x, idx) => (
           <Card
@@ -251,10 +249,10 @@ export default function Page() {
             desc={x.desc}
             tag={x.tag}
             price={`${x.price} ₴`}
-            priceNote="оплата в TG"
-            hint="⚡ Автовыдача после оплаты"
+            priceNote="к оплате"
+            hint="💳 Выбор способа оплаты на следующем экране"
             actionText="Оплатить"
-            onAction={() => pay(x)}
+            onAction={() => goCheckout(x.id)}
           />
         ))}
       </div>
@@ -265,7 +263,7 @@ export default function Page() {
     const items = payItems.filter((x) => x.section === "work");
     return (
       <div className="mt-5 grid gap-3">
-        <SectionTitle title="💼 Ворк" desc="Материалы/пакеты — оплачивай и получай в боте 👇" />
+        <SectionTitle title="💼 Ворк" desc="Выбирай пакет и переходи к оплате 👇" />
 
         {items.map((x, idx) => (
           <Card
@@ -275,10 +273,10 @@ export default function Page() {
             desc={x.desc}
             tag={x.tag}
             price={`${x.price} ₴`}
-            priceNote="оплата в TG"
-            hint="📩 Выдача после оплаты"
+            priceNote="к оплате"
+            hint="💳 Выбор способа оплаты на следующем экране"
             actionText="Оплатить"
-            onAction={() => pay(x)}
+            onAction={() => goCheckout(x.id)}
           />
         ))}
       </div>
@@ -287,10 +285,7 @@ export default function Page() {
 
   const Services = () => (
     <div className="mt-5">
-      <SectionTitle
-        title="🛠 Услуги"
-        desc="Здесь цены примерные. Для точной цены — напиши в ЛС 👇"
-      />
+      <SectionTitle title="🛠 Услуги" desc="Здесь цены примерные. Для точной цены — напиши в ЛС 👇" />
 
       <div className="grid gap-3">
         {products.map((p, idx) => (
@@ -335,9 +330,7 @@ export default function Page() {
                   mini app
                 </span>
               </div>
-              <p className="mt-2 text-sm leading-relaxed text-white/70">
-                Навигация сверху — выбирай раздел 👇
-              </p>
+              <p className="mt-2 text-sm leading-relaxed text-white/70">Навигация сверху — выбирай раздел 👇</p>
             </div>
 
             <div className="text-right">
@@ -366,10 +359,7 @@ export default function Page() {
           {/* Footer */}
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white/70">
             💬 Нужна помощь или кастомный запрос?{" "}
-            <button
-              onClick={openSupport}
-              className="font-bold underline underline-offset-4 hover:opacity-90"
-            >
+            <button onClick={openSupport} className="font-bold underline underline-offset-4 hover:opacity-90">
               Напиши в поддержку
             </button>
             .
