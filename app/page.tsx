@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
 type Product = {
@@ -32,6 +32,8 @@ declare global {
 export default function Page() {
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState<Section>("manuals");
+  const [dir, setDir] = useState<1 | -1>(1); // 1 = к следующей (свайп влево), -1 = к предыдущей
+
   const router = useRouter();
 
   // swipe refs
@@ -40,15 +42,6 @@ export default function Page() {
   const locked = useRef(false);
 
   const sectionsOrder: Section[] = ["manuals", "work", "services"];
-
-  const goCheckout = (itemId: number) => router.push(`/checkout/${itemId}`);
-
-  const openSupport = () => {
-    const tg = window.Telegram?.WebApp;
-    const url = "https://t.me/cantworry";
-    if (tg?.openTelegramLink) tg.openTelegramLink(url);
-    else window.open(url, "_blank");
-  };
 
   // data
   const products: Product[] = useMemo(
@@ -121,19 +114,39 @@ export default function Page() {
     if (tg) {
       tg.ready();
       tg.expand();
+      // tg.setHeaderColor?.("#0B0F14");
+      // tg.setBackgroundColor?.("#0B0F14");
     }
     setReady(true);
   }, []);
 
+  const goCheckout = (itemId: number) => router.push(`/checkout/${itemId}`);
+
+  const openSupport = () => {
+    const tg = window.Telegram?.WebApp;
+    const url = "https://t.me/cantworry";
+    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+    else window.open(url, "_blank");
+  };
+
   // ---- Swipe logic ----
-  const switchBySwipe = (dir: "left" | "right") => {
+  const switchBySwipe = (direction: "left" | "right") => {
     const i = sectionsOrder.indexOf(section);
     if (i === -1) return;
-    const next =
-      dir === "left"
-        ? sectionsOrder[Math.min(i + 1, sectionsOrder.length - 1)]
-        : sectionsOrder[Math.max(i - 1, 0)];
-    if (next !== section) setSection(next);
+
+    if (direction === "left") {
+      const next = sectionsOrder[Math.min(i + 1, sectionsOrder.length - 1)];
+      if (next !== section) {
+        setDir(1);
+        setSection(next);
+      }
+    } else {
+      const prev = sectionsOrder[Math.max(i - 1, 0)];
+      if (prev !== section) {
+        setDir(-1);
+        setSection(prev);
+      }
+    }
   };
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -145,7 +158,6 @@ export default function Page() {
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
-    // Блокируем случайные свайпы во время вертикального скролла
     if (locked.current) return;
     if (startX.current == null || startY.current == null) return;
 
@@ -153,7 +165,7 @@ export default function Page() {
     const dx = t.clientX - startX.current;
     const dy = t.clientY - startY.current;
 
-    // если пользователь явно скроллит вверх/вниз — не трогаем
+    // если явно скроллим вертикально — отключаем swipe
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
       locked.current = true;
     }
@@ -170,14 +182,12 @@ export default function Page() {
     startX.current = null;
     startY.current = null;
 
-    // условия свайпа:
-    // - горизонтальный сдвиг достаточно большой
-    // - вертикальный маленький (чтобы не мешать скроллу)
-    if (Math.abs(dx) < 50) return;
-    if (Math.abs(dy) > 60) return;
+    // чуть чувствительнее
+    if (Math.abs(dx) < 35) return;
+    if (Math.abs(dy) > 90) return;
 
-    if (dx < 0) switchBySwipe("left"); // влево -> следующая вкладка
-    else switchBySwipe("right"); // вправо -> предыдущая
+    if (dx < 0) switchBySwipe("left");
+    else switchBySwipe("right");
   };
 
   // UI parts
@@ -185,7 +195,12 @@ export default function Page() {
     const active = section === id;
     return (
       <button
-        onClick={() => setSection(id)}
+        onClick={() => {
+          const cur = sectionsOrder.indexOf(section);
+          const next = sectionsOrder.indexOf(id);
+          setDir(next > cur ? 1 : -1);
+          setSection(id);
+        }}
         className={[
           "relative inline-flex flex-1 items-center justify-center rounded-2xl px-3 py-2 text-sm font-semibold",
           "transition-colors",
@@ -199,7 +214,7 @@ export default function Page() {
           <motion.span
             layoutId="tabPill"
             className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10"
-            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            transition={{ type: "spring", stiffness: 340, damping: 28 }}
           />
         )}
       </button>
@@ -212,87 +227,80 @@ export default function Page() {
     </span>
   );
 
+  // ✅ мобильный фикс карточки + аккуратные переносы
   const ItemCard = ({
-  title,
-  desc,
-  tag,
-  price,
-  priceNote,
-  actionText,
-  onAction,
-  idx,
-  icon,
-}: {
-  title: string;
-  desc: string;
-  tag?: string;
-  price: string;
-  priceNote: string;
-  actionText: string;
-  onAction: () => void;
-  idx: number;
-  icon: string;
-}) => (
-  <motion.div
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: idx * 0.04, duration: 0.28 }}
-    className="group rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-  >
-    {/* TOP ROW */}
-    <div className="flex items-start gap-3">
-      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-lg">
-        {icon}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="min-w-0 flex-1 truncate text-[15px] font-extrabold tracking-tight text-white">
-            {title}
-          </h3>
-
-          {tag ? (
-            <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
-              {tag}
-            </span>
-          ) : null}
+    title,
+    desc,
+    tag,
+    price,
+    priceNote,
+    actionText,
+    onAction,
+    idx,
+    icon,
+  }: {
+    title: string;
+    desc: string;
+    tag?: string;
+    price: string;
+    priceNote: string;
+    actionText: string;
+    onAction: () => void;
+    idx: number;
+    icon: string;
+  }) => (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.04, duration: 0.28 }}
+      className="group rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+    >
+      <div className="flex items-start gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-lg">
+          {icon}
         </div>
 
-        {/* PRICE on mobile goes below title if needed */}
-        <div className="mt-2 flex items-baseline justify-between gap-3">
-          <p className="min-w-0 flex-1 line-clamp-2 text-sm text-white/65">
-            {desc}
-          </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="min-w-0 flex-1 truncate text-[15px] font-extrabold tracking-tight text-white">
+              {title}
+            </h3>
+            {tag ? <Badge>{tag}</Badge> : null}
+          </div>
 
-          <div className="shrink-0 text-right">
-            <div className="text-[15px] font-extrabold text-white whitespace-nowrap">
-              {price}
-            </div>
-            <div className="mt-0.5 text-[11px] text-white/45 whitespace-nowrap">
-              {priceNote}
+          <div className="mt-2 flex items-baseline justify-between gap-3">
+            <p className="min-w-0 flex-1 line-clamp-2 text-sm text-white/65">
+              {desc}
+            </p>
+
+            <div className="shrink-0 text-right">
+              <div className="text-[15px] font-extrabold text-white whitespace-nowrap">
+                {price}
+              </div>
+              <div className="mt-0.5 text-[11px] text-white/45 whitespace-nowrap">
+                {priceNote}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    {/* BOTTOM ROW */}
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-      <div className="text-xs text-white/45">
-        {priceNote === "примерно"
-          ? "Цена ориентировочная"
-          : "Моментальная выдача после оплаты"}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs text-white/45">
+          {priceNote === "примерно"
+            ? "Цена ориентировочная"
+            : "Моментальная выдача после оплаты"}
+        </div>
+
+        <button
+          onClick={onAction}
+          className="w-full sm:w-auto rounded-2xl px-4 py-2 text-sm font-extrabold border border-white/10 bg-white/10 hover:bg-white/[0.14] text-white transition-colors"
+        >
+          {actionText}
+        </button>
       </div>
-
-      <button
-        onClick={onAction}
-        className="w-full sm:w-auto rounded-2xl px-4 py-2 text-sm font-extrabold border border-white/10 bg-white/10 hover:bg-white/[0.14] text-white transition-colors"
-      >
-        {actionText}
-      </button>
-    </div>
-  </motion.div>
-);
+    </motion.div>
+  );
 
   const Header = () => (
     <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
@@ -320,7 +328,12 @@ export default function Page() {
 
         <div className="shrink-0 text-right">
           <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2">
-            <span className={["h-2 w-2 rounded-full", ready ? "bg-emerald-400" : "bg-white/25"].join(" ")} />
+            <span
+              className={[
+                "h-2 w-2 rounded-full",
+                ready ? "bg-emerald-400" : "bg-white/25",
+              ].join(" ")}
+            />
             <span className="text-xs font-semibold text-white/70">
               {ready ? "online" : "loading"}
             </span>
@@ -343,7 +356,9 @@ export default function Page() {
       <div className="mt-4 grid gap-3">
         <div className="px-1">
           <div className="text-sm font-extrabold text-white">📚 Мануалы</div>
-          <div className="mt-1 text-sm text-white/60">Выбирай и переходи к оплате.</div>
+          <div className="mt-1 text-sm text-white/60">
+            Выбирай и переходи к оплате.
+          </div>
         </div>
 
         {items.map((x, idx) => (
@@ -370,7 +385,9 @@ export default function Page() {
       <div className="mt-4 grid gap-3">
         <div className="px-1">
           <div className="text-sm font-extrabold text-white">💼 Ворк</div>
-          <div className="mt-1 text-sm text-white/60">Пакеты материалов — выдача после оплаты.</div>
+          <div className="mt-1 text-sm text-white/60">
+            Пакеты материалов — выдача после оплаты.
+          </div>
         </div>
 
         {items.map((x, idx) => (
@@ -429,16 +446,63 @@ export default function Page() {
       <div className="relative mx-auto max-w-[560px] px-4 py-5">
         <Header />
 
-        {/* SWIPE AREA (контент) */}
-        <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          {section === "manuals" && <Manuals />}
-          {section === "work" && <Work />}
-          {section === "services" && <Services />}
+        {/* SWIPE + animated "homescreen-like" transition */}
+        <div
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          className="relative mt-1 overflow-hidden"
+        >
+          <AnimatePresence mode="popLayout" initial={false} custom={dir}>
+            <motion.div
+              key={section}
+              custom={dir}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              variants={{
+                enter: (d: 1 | -1) => ({
+                  x: d === 1 ? 90 : -90,
+                  opacity: 0,
+                  scale: 0.985,
+                  filter: "blur(2px)",
+                }),
+                center: {
+                  x: 0,
+                  opacity: 1,
+                  scale: 1,
+                  filter: "blur(0px)",
+                },
+                exit: (d: 1 | -1) => ({
+                  x: d === 1 ? -90 : 90,
+                  opacity: 0,
+                  scale: 0.985,
+                  filter: "blur(2px)",
+                }),
+              }}
+              transition={{
+                duration: 0.42, // дольше анимация переключения
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              className="will-change-transform"
+            >
+              <div className="relative">
+                {/* мягкая тень, создаёт ощущение "соседнего экрана" */}
+                <div className="pointer-events-none absolute -inset-6 rounded-[28px] opacity-40 shadow-[0_20px_80px_rgba(0,0,0,0.55)]" />
+                {section === "manuals" && <Manuals />}
+                {section === "work" && <Work />}
+                {section === "services" && <Services />}
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-sm text-white/65">
           💬 Нужна помощь?{" "}
-          <button onClick={openSupport} className="font-bold text-white hover:opacity-90">
+          <button
+            onClick={openSupport}
+            className="font-bold text-white hover:opacity-90"
+          >
             Напиши в поддержку
           </button>
           .
