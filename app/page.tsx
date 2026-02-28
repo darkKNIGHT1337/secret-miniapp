@@ -213,71 +213,86 @@ export default function Page() {
   );
 
   const ItemCard = ({
-    title,
-    desc,
-    tag,
-    price,
-    priceNote,
-    actionText,
-    onAction,
-    idx,
-    icon,
-  }: {
-    title: string;
-    desc: string;
-    tag?: string;
-    price: string;
-    priceNote: string;
-    actionText: string;
-    onAction: () => void;
-    idx: number;
-    icon: string;
-  }) => (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: idx * 0.04, duration: 0.28 }}
-      className="group rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-lg">
-              {icon}
-            </div>
+  title,
+  desc,
+  tag,
+  price,
+  priceNote,
+  actionText,
+  onAction,
+  idx,
+  icon,
+}: {
+  title: string;
+  desc: string;
+  tag?: string;
+  price: string;
+  priceNote: string;
+  actionText: string;
+  onAction: () => void;
+  idx: number;
+  icon: string;
+}) => (
+  <motion.div
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: idx * 0.04, duration: 0.28 }}
+    className="group rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+  >
+    {/* TOP ROW */}
+    <div className="flex items-start gap-3">
+      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-lg">
+        {icon}
+      </div>
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="truncate text-[15px] font-extrabold tracking-tight text-white">
-                  {title}
-                </h3>
-                {tag ? <Badge>{tag}</Badge> : null}
-              </div>
-              <p className="mt-1 line-clamp-2 text-sm text-white/65">{desc}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-[15px] font-extrabold tracking-tight text-white">
+            {title}
+          </h3>
+
+          {tag ? (
+            <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
+              {tag}
+            </span>
+          ) : null}
+        </div>
+
+        {/* PRICE on mobile goes below title if needed */}
+        <div className="mt-2 flex items-baseline justify-between gap-3">
+          <p className="min-w-0 flex-1 line-clamp-2 text-sm text-white/65">
+            {desc}
+          </p>
+
+          <div className="shrink-0 text-right">
+            <div className="text-[15px] font-extrabold text-white whitespace-nowrap">
+              {price}
+            </div>
+            <div className="mt-0.5 text-[11px] text-white/45 whitespace-nowrap">
+              {priceNote}
             </div>
           </div>
         </div>
+      </div>
+    </div>
 
-        <div className="shrink-0 text-right">
-          <div className="text-[15px] font-extrabold text-white">{price}</div>
-          <div className="mt-0.5 text-[11px] text-white/45">{priceNote}</div>
-        </div>
+    {/* BOTTOM ROW */}
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="text-xs text-white/45">
+        {priceNote === "примерно"
+          ? "Цена ориентировочная"
+          : "Моментальная выдача после оплаты"}
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <div className="text-xs text-white/45">
-          {priceNote === "примерно" ? "Цена ориентировочная" : "Моментальная выдача после оплаты"}
-        </div>
-
-        <button
-          onClick={onAction}
-          className="rounded-2xl px-4 py-2 text-sm font-extrabold border border-white/10 bg-white/10 hover:bg-white/[0.14] text-white transition-colors"
-        >
-          {actionText}
-        </button>
-      </div>
-    </motion.div>
-  );
+      <button
+        onClick={onAction}
+        className="w-full sm:w-auto rounded-2xl px-4 py-2 text-sm font-extrabold border border-white/10 bg-white/10 hover:bg-white/[0.14] text-white transition-colors"
+      >
+        {actionText}
+      </button>
+    </div>
+  </motion.div>
+);
 
   const Header = () => (
     <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
