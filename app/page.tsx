@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { motion, useMotionValue, animate } from "framer-motion";
 import { useRouter } from "next/navigation";
 
 type Product = {
@@ -31,17 +31,20 @@ declare global {
 
 export default function Page() {
   const [ready, setReady] = useState(false);
-  const [section, setSection] = useState<Section>("manuals");
-  const [dir, setDir] = useState<1 | -1>(1); // 1 = к следующей (свайп влево), -1 = к предыдущей
+
+  // порядок вкладок
+  const sectionsOrder: Section[] = ["manuals", "work", "services"];
+  const [index, setIndex] = useState(0); // 0 manuals, 1 work, 2 services
+  const section = sectionsOrder[index];
 
   const router = useRouter();
 
-  // swipe refs
-  const startX = useRef<number | null>(null);
-  const startY = useRef<number | null>(null);
-  const locked = useRef(false);
+  // pager sizing
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [vw, setVw] = useState(0);
 
-  const sectionsOrder: Section[] = ["manuals", "work", "services"];
+  // motion x
+  const x = useMotionValue(0);
 
   // data
   const products: Product[] = useMemo(
@@ -114,8 +117,6 @@ export default function Page() {
     if (tg) {
       tg.ready();
       tg.expand();
-      // tg.setHeaderColor?.("#0B0F14");
-      // tg.setBackgroundColor?.("#0B0F14");
     }
     setReady(true);
   }, []);
@@ -129,96 +130,39 @@ export default function Page() {
     else window.open(url, "_blank");
   };
 
-  // ---- Swipe logic ----
-  const switchBySwipe = (direction: "left" | "right") => {
-    const i = sectionsOrder.indexOf(section);
-    if (i === -1) return;
+  // measure width
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
 
-    if (direction === "left") {
-      const next = sectionsOrder[Math.min(i + 1, sectionsOrder.length - 1)];
-      if (next !== section) {
-        setDir(1);
-        setSection(next);
-      }
-    } else {
-      const prev = sectionsOrder[Math.max(i - 1, 0)];
-      if (prev !== section) {
-        setDir(-1);
-        setSection(prev);
-      }
-    }
-  };
+    const apply = () => {
+      const w = el.getBoundingClientRect().width;
+      setVw(w);
+    };
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    const t = e.touches[0];
-    startX.current = t.clientX;
-    startY.current = t.clientY;
-    locked.current = false;
-  };
+    apply();
 
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (locked.current) return;
-    if (startX.current == null || startY.current == null) return;
+    const ro = new ResizeObserver(() => apply());
+    ro.observe(el);
 
-    const t = e.touches[0];
-    const dx = t.clientX - startX.current;
-    const dy = t.clientY - startY.current;
+    return () => ro.disconnect();
+  }, []);
 
-    // если явно скроллим вертикально — отключаем swipe
-    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
-      locked.current = true;
-    }
-  };
+  // keep x in sync when index or vw changes
+  useEffect(() => {
+    if (!vw) return;
+    animate(x, -index * vw, {
+      type: "spring",
+      stiffness: 320,
+      damping: 34,
+      mass: 0.9,
+    });
+  }, [index, vw, x]);
 
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (locked.current) return;
-    if (startX.current == null || startY.current == null) return;
-
-    const t = e.changedTouches[0];
-    const dx = t.clientX - startX.current;
-    const dy = t.clientY - startY.current;
-
-    startX.current = null;
-    startY.current = null;
-
-    // чуть чувствительнее
-    if (Math.abs(dx) < 35) return;
-    if (Math.abs(dy) > 90) return;
-
-    if (dx < 0) switchBySwipe("left");
-    else switchBySwipe("right");
-  };
-
-  // UI parts
-  const Tab = ({ id, label }: { id: Section; label: string }) => {
-    const active = section === id;
-    return (
-      <button
-        onClick={() => {
-          const cur = sectionsOrder.indexOf(section);
-          const next = sectionsOrder.indexOf(id);
-          setDir(next > cur ? 1 : -1);
-          setSection(id);
-        }}
-        className={[
-          "relative inline-flex flex-1 items-center justify-center rounded-2xl px-3 py-2 text-sm font-semibold",
-          "transition-colors",
-          active
-            ? "text-white bg-white/10 border border-white/10"
-            : "text-white/70 hover:text-white hover:bg-white/[0.06] border border-transparent",
-        ].join(" ")}
-      >
-        {label}
-        {active && (
-          <motion.span
-            layoutId="tabPill"
-            className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10"
-            transition={{ type: "spring", stiffness: 340, damping: 28 }}
-          />
-        )}
-      </button>
-    );
+  const setTab = (id: Section) => {
+    const next = sectionsOrder.indexOf(id);
+    if (next === -1 || next === index) return;
+    setIndex(next);
   };
 
   const Badge = ({ children }: { children: React.ReactNode }) => (
@@ -227,7 +171,6 @@ export default function Page() {
     </span>
   );
 
-  // ✅ мобильный фикс карточки + аккуратные переносы
   const ItemCard = ({
     title,
     desc,
@@ -320,7 +263,7 @@ export default function Page() {
                 </span>
               </div>
               <div className="mt-1 text-sm text-white/60">
-                Свайпай влево/вправо по карточкам, чтобы менять вкладки.
+                Свайпай плавно как iOS — экран едет вместе с пальцем ✨
               </div>
             </div>
           </div>
@@ -328,12 +271,7 @@ export default function Page() {
 
         <div className="shrink-0 text-right">
           <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2">
-            <span
-              className={[
-                "h-2 w-2 rounded-full",
-                ready ? "bg-emerald-400" : "bg-white/25",
-              ].join(" ")}
-            />
+            <span className={["h-2 w-2 rounded-full", ready ? "bg-emerald-400" : "bg-white/25"].join(" ")} />
             <span className="text-xs font-semibold text-white/70">
               {ready ? "online" : "loading"}
             </span>
@@ -343,9 +281,31 @@ export default function Page() {
       </div>
 
       <div className="mt-4 flex gap-2 rounded-[22px] border border-white/10 bg-black/20 p-2">
-        <Tab id="manuals" label="Мануалы" />
-        <Tab id="work" label="Ворк" />
-        <Tab id="services" label="Услуги" />
+        {sectionsOrder.map((id) => {
+          const active = section === id;
+          const label = id === "manuals" ? "Мануалы" : id === "work" ? "Ворк" : "Услуги";
+          return (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={[
+                "relative inline-flex flex-1 items-center justify-center rounded-2xl px-3 py-2 text-sm font-semibold transition-colors",
+                active
+                  ? "text-white bg-white/10 border border-white/10"
+                  : "text-white/70 hover:text-white hover:bg-white/[0.06] border border-transparent",
+              ].join(" ")}
+            >
+              {label}
+              {active && (
+                <motion.span
+                  layoutId="tabPill"
+                  className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10"
+                  transition={{ type: "spring", stiffness: 340, damping: 28 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -356,9 +316,7 @@ export default function Page() {
       <div className="mt-4 grid gap-3">
         <div className="px-1">
           <div className="text-sm font-extrabold text-white">📚 Мануалы</div>
-          <div className="mt-1 text-sm text-white/60">
-            Выбирай и переходи к оплате.
-          </div>
+          <div className="mt-1 text-sm text-white/60">Выбирай и переходи к оплате.</div>
         </div>
 
         {items.map((x, idx) => (
@@ -385,9 +343,7 @@ export default function Page() {
       <div className="mt-4 grid gap-3">
         <div className="px-1">
           <div className="text-sm font-extrabold text-white">💼 Ворк</div>
-          <div className="mt-1 text-sm text-white/60">
-            Пакеты материалов — выдача после оплаты.
-          </div>
+          <div className="mt-1 text-sm text-white/60">Пакеты материалов — выдача после оплаты.</div>
         </div>
 
         {items.map((x, idx) => (
@@ -434,6 +390,35 @@ export default function Page() {
     </div>
   );
 
+  // drag end snap
+  const onDragEnd = (_: any, info: { offset: { x: number }; velocity: { x: number } }) => {
+    if (!vw) return;
+
+    const offsetX = info.offset.x;
+    const vX = info.velocity.x;
+
+    // пороги (чтобы было "как iOS")
+    const swipeByOffset = Math.abs(offsetX) > vw * 0.22;
+    const swipeByVelocity = Math.abs(vX) > 550;
+
+    let nextIndex = index;
+
+    if (swipeByOffset || swipeByVelocity) {
+      if (offsetX < 0) nextIndex = Math.min(index + 1, sectionsOrder.length - 1); // swipe left -> next
+      if (offsetX > 0) nextIndex = Math.max(index - 1, 0); // swipe right -> prev
+    }
+
+    setIndex(nextIndex);
+
+    // анимируем к ближайшему экрану
+    animate(x, -nextIndex * vw, {
+      type: "spring",
+      stiffness: 320,
+      damping: 34,
+      mass: 0.9,
+    });
+  };
+
   return (
     <div className="min-h-screen bg-[#0B0F14] text-white">
       {/* background */}
@@ -446,63 +431,44 @@ export default function Page() {
       <div className="relative mx-auto max-w-[560px] px-4 py-5">
         <Header />
 
-        {/* SWIPE + animated "homescreen-like" transition */}
+        {/* iOS-like pager */}
         <div
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-          className="relative mt-1 overflow-hidden"
+          ref={viewportRef}
+          className="relative mt-3 overflow-hidden"
+          style={{ touchAction: "pan-y" }} // важно: сохраняем вертикальный скролл, горизонталь — наш drag
         >
-          <AnimatePresence mode="popLayout" initial={false} custom={dir}>
-            <motion.div
-              key={section}
-              custom={dir}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              variants={{
-                enter: (d: 1 | -1) => ({
-                  x: d === 1 ? 90 : -90,
-                  opacity: 0,
-                  scale: 0.985,
-                  filter: "blur(2px)",
-                }),
-                center: {
-                  x: 0,
-                  opacity: 1,
-                  scale: 1,
-                  filter: "blur(0px)",
-                },
-                exit: (d: 1 | -1) => ({
-                  x: d === 1 ? -90 : 90,
-                  opacity: 0,
-                  scale: 0.985,
-                  filter: "blur(2px)",
-                }),
-              }}
-              transition={{
-                duration: 0.42, // дольше анимация переключения
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              className="will-change-transform"
-            >
-              <div className="relative">
-                {/* мягкая тень, создаёт ощущение "соседнего экрана" */}
-                <div className="pointer-events-none absolute -inset-6 rounded-[28px] opacity-40 shadow-[0_20px_80px_rgba(0,0,0,0.55)]" />
-                {section === "manuals" && <Manuals />}
-                {section === "work" && <Work />}
-                {section === "services" && <Services />}
-              </div>
-            </motion.div>
-          </AnimatePresence>
+          <motion.div
+            drag="x"
+            dragMomentum={false}
+            dragElastic={0.08}
+            style={{ x }}
+            onDragEnd={onDragEnd}
+            // ограничиваем перетягивание на крайних вкладках
+            dragConstraints={{
+              left: -(sectionsOrder.length - 1) * vw,
+              right: 0,
+            }}
+            className="flex"
+          >
+            <div className="w-full shrink-0" style={{ width: vw || "100%" }}>
+              <Manuals />
+            </div>
+            <div className="w-full shrink-0" style={{ width: vw || "100%" }}>
+              <Work />
+            </div>
+            <div className="w-full shrink-0" style={{ width: vw || "100%" }}>
+              <Services />
+            </div>
+          </motion.div>
+
+          {/* лёгкая “подсветка” краёв как у iOS */}
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-[linear-gradient(to_right,rgba(11,15,20,0.9),transparent)]" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-4 bg-[linear-gradient(to_left,rgba(11,15,20,0.9),transparent)]" />
         </div>
 
         <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-sm text-white/65">
           💬 Нужна помощь?{" "}
-          <button
-            onClick={openSupport}
-            className="font-bold text-white hover:opacity-90"
-          >
+          <button onClick={openSupport} className="font-bold text-white hover:opacity-90">
             Напиши в поддержку
           </button>
           .
