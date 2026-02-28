@@ -4,6 +4,12 @@ import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 
+declare global {
+  interface Window {
+    Telegram?: any;
+  }
+}
+
 type PayItem = {
   id: number;
   title: string;
@@ -12,17 +18,15 @@ type PayItem = {
   tag?: string;
 };
 
-declare global {
-  interface Window {
-    Telegram?: any;
-  }
-}
-
 export default function CheckoutPage() {
   const router = useRouter();
   const sp = useSearchParams();
   const itemId = Number(sp.get("itemId") || 0);
 
+  const tg = typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
+  const isWebApp = !!tg?.sendData;
+
+  // ⚠️ Должно совпадать с товарами в app/page.tsx (payItems)
   const items: PayItem[] = useMemo(
     () => [
       { id: 101, title: "📘 Гайд / Мануал (Base)", desc: "Структурно, по шагам. Выдача сразу после оплаты.", price: 199, tag: "TOP" },
@@ -35,22 +39,21 @@ export default function CheckoutPage() {
 
   const item = items.find((x) => x.id === itemId);
 
+  // Telegram Pay
   const tgInvoice = () => {
-    const tg = window.Telegram?.WebApp;
     const payload = JSON.stringify({ action: "invoice", itemId });
     if (tg?.sendData) tg.sendData(payload);
-    else alert("Открой через Telegram, чтобы оплатить через TG.");
+    else alert("Открой мини-апп через кнопку WebApp в Telegram (WebApp: NO).");
   };
 
+  // CryptoBot
   const cryptoInvoice = () => {
-    const tg = window.Telegram?.WebApp;
     const payload = JSON.stringify({ action: "crypto_invoice", itemId });
     if (tg?.sendData) tg.sendData(payload);
-    else alert("Открой через Telegram, чтобы оплатить криптой.");
+    else alert("Открой мини-апп через кнопку WebApp в Telegram (WebApp: NO).");
   };
 
   const openSupport = () => {
-    const tg = window.Telegram?.WebApp;
     const url = "https://t.me/cantworry";
     if (tg?.openTelegramLink) tg.openTelegramLink(url);
     else window.open(url, "_blank");
@@ -75,6 +78,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#070A12] text-white">
+      {/* background */}
       <div className="pointer-events-none absolute inset-0">
         <div className="bg-anim absolute -inset-[40%] opacity-70" />
         <div className="noise absolute inset-0 opacity-[0.08]" />
@@ -91,7 +95,10 @@ export default function CheckoutPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xl font-extrabold tracking-tight">💳 Выбор оплаты</div>
-              <p className="mt-1 text-sm text-white/70">Выбери способ оплаты 👇</p>
+              <div className="mt-1 text-sm text-white/70">Выбери способ оплаты 👇</div>
+              <div className="mt-2 text-xs text-white/60">
+                WebApp: <b>{isWebApp ? "YES" : "NO"}</b>
+              </div>
             </div>
 
             <button
@@ -102,6 +109,7 @@ export default function CheckoutPage() {
             </button>
           </div>
 
+          {/* item */}
           <div className="mt-5 rounded-[22px] border border-white/10 bg-white/[0.05] p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -122,6 +130,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
+          {/* methods */}
           <div className="mt-4 grid gap-3">
             <motion.button
               whileTap={{ scale: 0.99 }}
@@ -129,7 +138,7 @@ export default function CheckoutPage() {
               className="rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-left hover:bg-white/[0.09]"
             >
               <div className="text-base font-extrabold">✅ Telegram Pay</div>
-              <div className="mt-1 text-sm text-white/70">Оплата через инвойс Telegram (бот пришлёт счёт).</div>
+              <div className="mt-1 text-sm text-white/70">Бот пришлёт счёт (invoice) в Telegram.</div>
             </motion.button>
 
             <motion.button
@@ -138,7 +147,7 @@ export default function CheckoutPage() {
               className="rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-left hover:bg-white/[0.09]"
             >
               <div className="text-base font-extrabold">🪙 CryptoBot</div>
-              <div className="mt-1 text-sm text-white/70">Оплата криптой (бот создаст крипто-инвойс).</div>
+              <div className="mt-1 text-sm text-white/70">Бот создаст крипто-инвойс и отправит ссылку.</div>
             </motion.button>
 
             <motion.button
@@ -147,7 +156,7 @@ export default function CheckoutPage() {
               className="rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-left hover:bg-white/[0.09]"
             >
               <div className="text-base font-extrabold">💬 Другой способ</div>
-              <div className="mt-1 text-sm text-white/70">Написать в ЛС и договориться о варианте оплаты.</div>
+              <div className="mt-1 text-sm text-white/70">Написать в ЛС и договориться.</div>
             </motion.button>
           </div>
 
