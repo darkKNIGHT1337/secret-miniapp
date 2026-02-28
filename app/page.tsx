@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -34,7 +34,23 @@ export default function Page() {
   const [section, setSection] = useState<Section>("manuals");
   const router = useRouter();
 
-  // УСЛУГИ: примерные цены + ЛС
+  // swipe refs
+  const startX = useRef<number | null>(null);
+  const startY = useRef<number | null>(null);
+  const locked = useRef(false);
+
+  const sectionsOrder: Section[] = ["manuals", "work", "services"];
+
+  const goCheckout = (itemId: number) => router.push(`/checkout/${itemId}`);
+
+  const openSupport = () => {
+    const tg = window.Telegram?.WebApp;
+    const url = "https://t.me/cantworry";
+    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+    else window.open(url, "_blank");
+  };
+
+  // data
   const products: Product[] = useMemo(
     () => [
       {
@@ -62,7 +78,6 @@ export default function Page() {
     []
   );
 
-  // МАНУАЛЫ + ВОРК: товары с оплатой
   const payItems: PayItem[] = useMemo(
     () => [
       {
@@ -106,29 +121,73 @@ export default function Page() {
     if (tg) {
       tg.ready();
       tg.expand();
-      // tg.setHeaderColor?.("#0B0F14");
-      // tg.setBackgroundColor?.("#0B0F14");
     }
     setReady(true);
   }, []);
 
-  // ✅ переход на оплату (динамический роут)
-  const goCheckout = (itemId: number) => router.push(`/checkout/${itemId}`);
-
-  const openSupport = () => {
-    const tg = window.Telegram?.WebApp;
-    const url = "https://t.me/cantworry";
-    if (tg?.openTelegramLink) tg.openTelegramLink(url);
-    else window.open(url, "_blank");
+  // ---- Swipe logic ----
+  const switchBySwipe = (dir: "left" | "right") => {
+    const i = sectionsOrder.indexOf(section);
+    if (i === -1) return;
+    const next =
+      dir === "left"
+        ? sectionsOrder[Math.min(i + 1, sectionsOrder.length - 1)]
+        : sectionsOrder[Math.max(i - 1, 0)];
+    if (next !== section) setSection(next);
   };
 
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    startX.current = t.clientX;
+    startY.current = t.clientY;
+    locked.current = false;
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    // Блокируем случайные свайпы во время вертикального скролла
+    if (locked.current) return;
+    if (startX.current == null || startY.current == null) return;
+
+    const t = e.touches[0];
+    const dx = t.clientX - startX.current;
+    const dy = t.clientY - startY.current;
+
+    // если пользователь явно скроллит вверх/вниз — не трогаем
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+      locked.current = true;
+    }
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (locked.current) return;
+    if (startX.current == null || startY.current == null) return;
+
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX.current;
+    const dy = t.clientY - startY.current;
+
+    startX.current = null;
+    startY.current = null;
+
+    // условия свайпа:
+    // - горизонтальный сдвиг достаточно большой
+    // - вертикальный маленький (чтобы не мешать скроллу)
+    if (Math.abs(dx) < 50) return;
+    if (Math.abs(dy) > 60) return;
+
+    if (dx < 0) switchBySwipe("left"); // влево -> следующая вкладка
+    else switchBySwipe("right"); // вправо -> предыдущая
+  };
+
+  // UI parts
   const Tab = ({ id, label }: { id: Section; label: string }) => {
     const active = section === id;
     return (
       <button
         onClick={() => setSection(id)}
         className={[
-          "relative inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
+          "relative inline-flex flex-1 items-center justify-center rounded-2xl px-3 py-2 text-sm font-semibold",
           "transition-colors",
           active
             ? "text-white bg-white/10 border border-white/10"
@@ -207,17 +266,12 @@ export default function Page() {
 
       <div className="mt-4 flex items-center justify-between">
         <div className="text-xs text-white/45">
-          {/* аккуратная подпись как в маркетах */}
           {priceNote === "примерно" ? "Цена ориентировочная" : "Моментальная выдача после оплаты"}
         </div>
 
         <button
           onClick={onAction}
-          className={[
-            "rounded-2xl px-4 py-2 text-sm font-extrabold",
-            "border border-white/10 bg-white/10 hover:bg-white/[0.14]",
-            "text-white transition-colors",
-          ].join(" ")}
+          className="rounded-2xl px-4 py-2 text-sm font-extrabold border border-white/10 bg-white/10 hover:bg-white/[0.14] text-white transition-colors"
         >
           {actionText}
         </button>
@@ -243,7 +297,7 @@ export default function Page() {
                 </span>
               </div>
               <div className="mt-1 text-sm text-white/60">
-                Спокойный маркет-стиль. Никакой навязчивости.
+                Свайпай влево/вправо по карточкам, чтобы менять вкладки.
               </div>
             </div>
           </div>
@@ -251,12 +305,7 @@ export default function Page() {
 
         <div className="shrink-0 text-right">
           <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2">
-            <span
-              className={[
-                "h-2 w-2 rounded-full",
-                ready ? "bg-emerald-400" : "bg-white/25",
-              ].join(" ")}
-            />
+            <span className={["h-2 w-2 rounded-full", ready ? "bg-emerald-400" : "bg-white/25"].join(" ")} />
             <span className="text-xs font-semibold text-white/70">
               {ready ? "online" : "loading"}
             </span>
@@ -279,9 +328,7 @@ export default function Page() {
       <div className="mt-4 grid gap-3">
         <div className="px-1">
           <div className="text-sm font-extrabold text-white">📚 Мануалы</div>
-          <div className="mt-1 text-sm text-white/60">
-            Выбирай и переходи к выбору оплаты.
-          </div>
+          <div className="mt-1 text-sm text-white/60">Выбирай и переходи к оплате.</div>
         </div>
 
         {items.map((x, idx) => (
@@ -308,9 +355,7 @@ export default function Page() {
       <div className="mt-4 grid gap-3">
         <div className="px-1">
           <div className="text-sm font-extrabold text-white">💼 Ворк</div>
-          <div className="mt-1 text-sm text-white/60">
-            Пакеты материалов — выдача после оплаты.
-          </div>
+          <div className="mt-1 text-sm text-white/60">Пакеты материалов — выдача после оплаты.</div>
         </div>
 
         {items.map((x, idx) => (
@@ -359,7 +404,7 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-[#0B0F14] text-white">
-      {/* мягкий “маркет” фон */}
+      {/* background */}
       <div className="pointer-events-none fixed inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(900px_500px_at_20%_10%,rgba(255,255,255,0.06),transparent_60%),radial-gradient(700px_500px_at_90%_20%,rgba(120,180,255,0.06),transparent_60%),radial-gradient(700px_600px_at_40%_90%,rgba(170,120,255,0.05),transparent_60%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.0),rgba(0,0,0,0.65))]" />
@@ -369,16 +414,16 @@ export default function Page() {
       <div className="relative mx-auto max-w-[560px] px-4 py-5">
         <Header />
 
-        {section === "manuals" && <Manuals />}
-        {section === "work" && <Work />}
-        {section === "services" && <Services />}
+        {/* SWIPE AREA (контент) */}
+        <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+          {section === "manuals" && <Manuals />}
+          {section === "work" && <Work />}
+          {section === "services" && <Services />}
+        </div>
 
         <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-sm text-white/65">
           💬 Нужна помощь?{" "}
-          <button
-            onClick={openSupport}
-            className="font-bold text-white hover:opacity-90"
-          >
+          <button onClick={openSupport} className="font-bold text-white hover:opacity-90">
             Напиши в поддержку
           </button>
           .
