@@ -36,7 +36,7 @@ export default function CheckoutClient() {
     if (!targetId) return;
 
     const now = Date.now();
-    if (now - lastCheckedRef.current < 1500) return;
+    if (now - lastCheckedRef.current < 1500) return; // антиспам
     lastCheckedRef.current = now;
 
     setChecking(true);
@@ -70,7 +70,8 @@ export default function CheckoutClient() {
     try {
       setLoading(true);
 
-      const amount = "1"; // TODO: цена по itemId
+      // TODO: поставь цену по itemId
+      const amount = "1";
 
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
@@ -99,7 +100,7 @@ export default function CheckoutClient() {
     }
   }
 
-  // Авто-проверка при возвращении из CryptoBot (когда вкладка снова активна)
+  // Авто-проверка при возвращении из CryptoBot (когда приложение снова активно)
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
@@ -111,32 +112,180 @@ export default function CheckoutClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceId]);
 
+  const statusBadge = useMemo(() => {
+    if (!payStatus) return null;
+
+    const map: Record<string, { text: string; cls: string }> = {
+      paid: { text: "Оплачено ✅", cls: "ok" },
+      active: { text: "Ожидает оплаты…", cls: "warn" },
+      expired: { text: "Счёт истёк", cls: "err" },
+      cancelled: { text: "Отменено", cls: "err" },
+      unknown: { text: "Статус неизвестен", cls: "muted" },
+    };
+
+    const v = map[payStatus] ?? { text: `Статус: ${payStatus}`, cls: "muted" };
+    return (
+      <div className={`badge ${v.cls}`} style={{ marginTop: 12 }}>
+        {v.text}
+      </div>
+    );
+  }, [payStatus]);
+
   return (
-    <div style={{ padding: 16, maxWidth: 520 }}>
-      <h2>Оплата товара #{itemId || 0}</h2>
+    <div className="container">
+      <div className="card">
+        <div className="head">
+          <div>
+            <h2 className="title">Оплата товара #{itemId || 0}</h2>
+            <div className="sub">CryptoBot · USDT</div>
+          </div>
+          <div className={`pill ${invoiceId ? "" : "muted"}`}>
+            Invoice: {invoiceId ?? "—"}
+          </div>
+        </div>
 
-      {isBadItemId && (
-        <p style={{ color: "crimson" }}>
-          Открой так: <b>/checkout/1</b>
-        </p>
-      )}
+        {isBadItemId && (
+          <div className="alert err" style={{ marginTop: 12 }}>
+            Открой так: <b>/checkout/1</b> (или другой номер).
+          </div>
+        )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <button onClick={payWithCrypto} disabled={loading || isBadItemId}>
-          {loading ? "Создаю счет..." : "Оплатить криптой"}
-        </button>
+        <div className="row">
+          <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+            {loading ? "Создаю счет..." : "Оплатить криптой"}
+          </button>
 
-        <button onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
-          Открыть оплату ещё раз
-        </button>
+          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
+            Открыть оплату ещё раз
+          </button>
 
-        <button onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
-          {checking ? "Проверяю..." : "Проверить статус"}
-        </button>
+          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
+            {checking ? "Проверяю..." : "Проверить статус"}
+          </button>
+        </div>
+
+        {statusBadge}
+
+        <div className="hint">
+          После оплаты просто вернись назад — статус проверится автоматически. Если нужно, нажми “Проверить статус”.
+        </div>
       </div>
 
-      {invoiceId && <p style={{ marginTop: 12 }}><b>Invoice ID:</b> {invoiceId}</p>}
-      {payStatus && <p><b>Статус:</b> {payStatus}</p>}
+      <style jsx>{`
+        .container {
+          min-height: 100vh;
+          display: flex;
+          justify-content: center;
+          padding: 24px 14px;
+          background: #0b0f14;
+          color: #eaf0ff;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        }
+        .card {
+          width: 100%;
+          max-width: 560px;
+          background: #111826;
+          border: 1px solid rgba(234, 240, 255, 0.12);
+          border-radius: 18px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+        }
+        .head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .title {
+          margin: 0;
+          font-size: 20px;
+          line-height: 1.2;
+        }
+        .sub {
+          margin-top: 6px;
+          font-size: 13px;
+          color: rgba(234, 240, 255, 0.75);
+        }
+        .pill {
+          padding: 7px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(234, 240, 255, 0.12);
+          background: rgba(255, 255, 255, 0.06);
+          font-size: 12px;
+          white-space: nowrap;
+        }
+        .muted {
+          color: rgba(234, 240, 255, 0.65);
+        }
+        .row {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 14px;
+        }
+        .btn {
+          padding: 10px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(234, 240, 255, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: #eaf0ff;
+          cursor: pointer;
+          transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+        }
+        .btn:hover {
+          transform: translateY(-1px);
+          background: rgba(255, 255, 255, 0.09);
+          border-color: rgba(234, 240, 255, 0.22);
+        }
+        .btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          transform: none;
+        }
+        .primary {
+          background: rgba(124, 255, 178, 0.14);
+          border-color: rgba(124, 255, 178, 0.25);
+        }
+        .primary:hover {
+          background: rgba(124, 255, 178, 0.18);
+          border-color: rgba(124, 255, 178, 0.35);
+        }
+        .badge {
+          display: inline-block;
+          padding: 8px 12px;
+          border-radius: 999px;
+          border: 1px solid rgba(234, 240, 255, 0.12);
+          background: rgba(255, 255, 255, 0.06);
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .ok {
+          color: #7cffb2;
+          border-color: rgba(124, 255, 178, 0.28);
+          background: rgba(124, 255, 178, 0.10);
+        }
+        .warn {
+          color: #ffcc66;
+          border-color: rgba(255, 204, 102, 0.26);
+          background: rgba(255, 204, 102, 0.10);
+        }
+        .err {
+          color: #ff6b6b;
+          border-color: rgba(255, 107, 107, 0.26);
+          background: rgba(255, 107, 107, 0.10);
+        }
+        .alert {
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(234, 240, 255, 0.12);
+        }
+        .hint {
+          margin-top: 12px;
+          font-size: 13px;
+          line-height: 1.4;
+          color: rgba(234, 240, 255, 0.75);
+        }
+      `}</style>
     </div>
   );
 }
