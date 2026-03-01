@@ -129,13 +129,14 @@ export default function CheckoutClient() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [invoiceId]);
 
-  const statusText = {
-    paid: "Оплачено ✅",
-    active: "Ожидает оплаты…",
-    expired: "Счёт истёк",
-    cancelled: "Отменено",
-    unknown: "Статус неизвестен",
-  }[payStatus as keyof any] || (payStatus ? `Статус: ${payStatus}` : "");
+  let statusText = "";
+
+if (payStatus === "paid") statusText = "Оплачено ✅";
+else if (payStatus === "active") statusText = "Ожидает оплаты…";
+else if (payStatus === "expired") statusText = "Счёт истёк";
+else if (payStatus === "cancelled") statusText = "Отменено";
+else if (payStatus === "unknown") statusText = "Статус неизвестен";
+else if (payStatus) statusText = `Статус: ${payStatus}`;
 
   return (
     <div className="wrap">
