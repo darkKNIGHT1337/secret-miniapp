@@ -37,9 +37,14 @@ export async function POST(req: Request) {
     }
 
     const invoice = data.result;
+
+    // ✅ Главное: даём ссылку в Telegram (t.me/...), а не pay_url (deprecated)
+    const bestUrl =
+      invoice.bot_invoice_url || invoice.mini_app_invoice_url || invoice.web_app_pay_url || invoice.pay_url;
+
     return NextResponse.json({
       invoice_id: invoice.invoice_id,
-      pay_url: invoice.pay_url,
+      pay_url: bestUrl,
       status: invoice.status,
     });
   } catch (e: any) {

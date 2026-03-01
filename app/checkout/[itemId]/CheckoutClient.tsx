@@ -8,7 +8,6 @@ type PayStatus = "" | "active" | "paid" | "expired" | "cancelled" | "unknown" | 
 export default function CheckoutClient() {
   const params = useParams<{ itemId?: string }>();
   const router = useRouter();
-
   const itemId = Number(params?.itemId ?? 0);
 
   const [invoiceId, setInvoiceId] = useState<number | null>(null);
@@ -17,10 +16,9 @@ export default function CheckoutClient() {
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
 
-  const lastCheckRef = useRef(0);
   const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
+  const lastCheckRef = useRef(0);
 
-  // --- ОТКРЫТИЕ CRYPTOBOT (главный фикс)
   function openPayLink(url: string) {
     if (!url) return;
 
@@ -29,14 +27,14 @@ export default function CheckoutClient() {
 
     if (tg) {
       try {
-        // если ссылка вида t.me/... (важно для телефонов)
+        // ✅ Telegram-ссылки (t.me/...) открывать только так — иначе на телефонах часто “не открывается”
         if (typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
           const cleaned = url.replace(/^https?:\/\//i, "");
           tg.openTelegramLink(cleaned);
           return;
         }
 
-        // обычные ссылки
+        // ✅ обычные ссылки
         if (typeof tg.openLink === "function") {
           tg.openLink(url, { try_instant_view: false });
           return;
@@ -44,11 +42,10 @@ export default function CheckoutClient() {
       } catch {}
     }
 
-    // если открыто вне Telegram
+    // fallback вне Telegram
     window.open(url, "_blank");
   }
 
-  // --- ПРОВЕРКА СТАТУСА
   async function checkPaymentOnce(id?: number | null) {
     const targetId = id ?? invoiceId;
     if (!targetId) return;
@@ -58,22 +55,21 @@ export default function CheckoutClient() {
     lastCheckRef.current = now;
 
     setChecking(true);
-
     try {
       const res = await fetch("/api/cryptobot/check-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ invoice_id: targetId }),
       });
-
       const data = await res.json();
 
       if (!res.ok) {
         setPayStatus("unknown");
+        alert(data?.error || "Ошибка проверки оплаты");
         return;
       }
 
-      const status = data?.status || "unknown";
+      const status = (data?.status || "unknown") as PayStatus;
       setPayStatus(status);
 
       if (status === "paid") {
@@ -84,12 +80,11 @@ export default function CheckoutClient() {
     }
   }
 
-  // --- СОЗДАНИЕ СЧЁТА
   async function payWithCrypto() {
     try {
       setLoading(true);
 
-      const amount = "1"; // можешь потом сделать цену по itemId
+      const amount = "1"; // TODO: цена по itemId
 
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
@@ -112,13 +107,14 @@ export default function CheckoutClient() {
       setPayUrl(data.pay_url);
       setPayStatus(data.status || "active");
 
+      // ✅ откроет CryptoBot (на телефоне тоже)
       openPayLink(data.pay_url);
     } finally {
       setLoading(false);
     }
   }
 
-  // --- АВТОПРОВЕРКА при возврате из CryptoBot
+  // ✅ когда вернулся из CryptoBot — статус проверится сам
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
@@ -130,49 +126,41 @@ export default function CheckoutClient() {
   }, [invoiceId]);
 
   let statusText = "";
-
-if (payStatus === "paid") statusText = "Оплачено ✅";
-else if (payStatus === "active") statusText = "Ожидает оплаты…";
-else if (payStatus === "expired") statusText = "Счёт истёк";
-else if (payStatus === "cancelled") statusText = "Отменено";
-else if (payStatus === "unknown") statusText = "Статус неизвестен";
-else if (payStatus) statusText = `Статус: ${payStatus}`;
+  if (payStatus === "paid") statusText = "Оплачено ✅";
+  else if (payStatus === "active") statusText = "Ожидает оплаты…";
+  else if (payStatus === "expired") statusText = "Счёт истёк";
+  else if (payStatus === "cancelled") statusText = "Отменено";
+  else if (payStatus === "unknown") statusText = "Статус неизвестен";
+  else if (payStatus) statusText = `Статус: ${payStatus}`;
 
   return (
     <div className="wrap">
       <div className="card">
-        <h2>Оплата товара #{itemId}</h2>
+        <h2 className="title">Оплата товара #{itemId || 0}</h2>
+        <div className="sub">CryptoBot · USDT</div>
 
-        {isBadItemId && (
-          <div className="error">Открой страницу как /checkout/1</div>
-        )}
+        {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
 
-        <button
-          className="btn main"
-          onClick={payWithCrypto}
-          disabled={loading || isBadItemId}
-        >
+        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
           {loading ? "Создаю счёт..." : "Оплатить криптой"}
         </button>
 
-        <button
-          className="btn"
-          onClick={() => openPayLink(payUrl)}
-          disabled={!payUrl}
-        >
-          Открыть оплату ещё раз
-        </button>
+        <div className="row">
+          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
+            Открыть оплату ещё раз
+          </button>
 
-        <button
-          className="btn"
-          onClick={() => checkPaymentOnce()}
-          disabled={!invoiceId || checking}
-        >
-          {checking ? "Проверяю..." : "Проверить оплату"}
-        </button>
+          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
+            {checking ? "Проверяю..." : "Проверить оплату"}
+          </button>
+        </div>
 
-        {invoiceId && <div className="info">Invoice: {invoiceId}</div>}
+        {invoiceId && <div className="meta">Invoice ID: {invoiceId}</div>}
         {statusText && <div className="status">{statusText}</div>}
+
+        <div className="hint">
+          На ПК мини-апп может закрываться при переходе в CryptoBot — это нормально. Вернись назад, статус подтянется автоматически.
+        </div>
       </div>
 
       <style jsx>{`
@@ -181,59 +169,79 @@ else if (payStatus) statusText = `Статус: ${payStatus}`;
           background: #0b0f14;
           display: flex;
           justify-content: center;
-          padding: 20px;
-          color: #fff;
+          padding: 22px 14px;
+          color: #eaf0ff;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
-
         .card {
           width: 100%;
-          max-width: 420px;
+          max-width: 520px;
           background: #111826;
-          border-radius: 16px;
-          padding: 20px;
-          border: 1px solid rgba(255,255,255,0.08);
+          border: 1px solid rgba(234, 240, 255, 0.12);
+          border-radius: 18px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
         }
-
-        h2 {
-          margin: 0 0 14px;
+        .title {
+          margin: 0;
+          font-size: 20px;
         }
-
+        .sub {
+          margin-top: 6px;
+          font-size: 13px;
+          color: rgba(234, 240, 255, 0.7);
+        }
+        .alert {
+          margin-top: 12px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 107, 107, 0.25);
+          background: rgba(255, 107, 107, 0.1);
+          color: #ff6b6b;
+          font-weight: 600;
+        }
         .btn {
           width: 100%;
-          margin-top: 10px;
-          padding: 12px;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(255,255,255,0.05);
-          color: #fff;
+          margin-top: 12px;
+          padding: 12px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(234, 240, 255, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: #eaf0ff;
           cursor: pointer;
         }
-
-        .btn.main {
-          background: #1f6fff;
-          border: none;
-          font-weight: 600;
-        }
-
         .btn:disabled {
-          opacity: 0.5;
+          opacity: 0.55;
           cursor: not-allowed;
         }
-
-        .info {
+        .primary {
+          background: rgba(124, 255, 178, 0.14);
+          border-color: rgba(124, 255, 178, 0.25);
+          font-weight: 700;
+        }
+        .row {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .row .btn {
+          width: auto;
+          flex: 1 1 200px;
+        }
+        .meta {
           margin-top: 12px;
           font-size: 13px;
-          opacity: 0.7;
+          opacity: 0.75;
         }
-
         .status {
           margin-top: 8px;
-          font-weight: 600;
+          font-weight: 800;
         }
-
-        .error {
-          color: #ff6b6b;
-          margin-bottom: 10px;
+        .hint {
+          margin-top: 12px;
+          font-size: 13px;
+          line-height: 1.4;
+          opacity: 0.75;
         }
       `}</style>
     </div>
