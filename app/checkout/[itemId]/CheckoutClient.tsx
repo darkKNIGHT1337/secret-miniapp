@@ -11,88 +11,46 @@ export default function CheckoutClient() {
   const itemId = Number(params?.itemId ?? 0);
 
   const [invoiceId, setInvoiceId] = useState<number | null>(null);
-  const [payUrl, setPayUrl] = useState<string>("");
+  const [payUrl, setPayUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
 
-  const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
   const lastCheckRef = useRef(0);
+  const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
 
-  function openPayLink(url: string) {
-    if (!url) return;
+  // Открытие CryptoBot (ТОЛЬКО по кнопке пользователя)
+  function openPayLink() {
+    if (!payUrl) return;
 
     // @ts-ignore
-    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
+    const tg = window?.Telegram?.WebApp;
 
-    if (tg) {
-      try {
-        // ✅ Telegram-ссылки (t.me/...) открывать только так — иначе на телефонах часто “не открывается”
-        if (typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
-          const cleaned = url.replace(/^https?:\/\//i, "");
-          tg.openTelegramLink(cleaned);
-          return;
-        }
-
-        // ✅ обычные ссылки
-        if (typeof tg.openLink === "function") {
-          tg.openLink(url, { try_instant_view: false });
-          return;
-        }
-      } catch {}
+    if (tg && tg.openTelegramLink && payUrl.includes("t.me")) {
+      const cleaned = payUrl.replace(/^https?:\/\//, "");
+      tg.openTelegramLink(cleaned);
+      return;
     }
 
-    // fallback вне Telegram
-    window.open(url, "_blank");
-  }
-
-  async function checkPaymentOnce(id?: number | null) {
-    const targetId = id ?? invoiceId;
-    if (!targetId) return;
-
-    const now = Date.now();
-    if (now - lastCheckRef.current < 1500) return;
-    lastCheckRef.current = now;
-
-    setChecking(true);
-    try {
-      const res = await fetch("/api/cryptobot/check-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice_id: targetId }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setPayStatus("unknown");
-        alert(data?.error || "Ошибка проверки оплаты");
-        return;
-      }
-
-      const status = (data?.status || "unknown") as PayStatus;
-      setPayStatus(status);
-
-      if (status === "paid") {
-        router.push(`/access/${itemId}`);
-      }
-    } finally {
-      setChecking(false);
+    if (tg && tg.openLink) {
+      tg.openLink(payUrl);
+      return;
     }
+
+    window.open(payUrl, "_blank");
   }
 
   async function payWithCrypto() {
     try {
       setLoading(true);
 
-      const amount = "1"; // TODO: цена по itemId
-
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount,
+          amount: "1",
           description: `Оплата товара #${itemId}`,
-          payload: `item_${itemId}_${Date.now()}`,
+          payload: `item_${itemId}_${Date.now()}`
         }),
       });
 
@@ -105,20 +63,50 @@ export default function CheckoutClient() {
 
       setInvoiceId(data.invoice_id);
       setPayUrl(data.pay_url);
-      setPayStatus(data.status || "active");
+      setPayStatus("active");
 
-      // ✅ откроет CryptoBot (на телефоне тоже)
-      openPayLink(data.pay_url);
+      // ❗ НЕ открываем автоматически
     } finally {
       setLoading(false);
     }
   }
 
-  // ✅ когда вернулся из CryptoBot — статус проверится сам
+  async function checkPaymentOnce() {
+    if (!invoiceId) return;
+
+    const now = Date.now();
+    if (now - lastCheckRef.current < 1500) return;
+    lastCheckRef.current = now;
+
+    setChecking(true);
+
+    try {
+      const res = await fetch("/api/cryptobot/check-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_id: invoiceId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) return;
+
+      const status = data?.status || "unknown";
+      setPayStatus(status);
+
+      if (status === "paid") {
+        router.push(`/access/${itemId}`);
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // Автопроверка при возврате
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
-        checkPaymentOnce(invoiceId);
+        checkPaymentOnce();
       }
     }
     document.addEventListener("visibilitychange", onVisible);
@@ -126,40 +114,34 @@ export default function CheckoutClient() {
   }, [invoiceId]);
 
   let statusText = "";
+  if (payStatus === "active") statusText = "Ожидает оплаты…";
   if (payStatus === "paid") statusText = "Оплачено ✅";
-  else if (payStatus === "active") statusText = "Ожидает оплаты…";
-  else if (payStatus === "expired") statusText = "Счёт истёк";
-  else if (payStatus === "cancelled") statusText = "Отменено";
-  else if (payStatus === "unknown") statusText = "Статус неизвестен";
-  else if (payStatus) statusText = `Статус: ${payStatus}`;
 
   return (
     <div className="wrap">
       <div className="card">
-        <h2 className="title">Оплата товара #{itemId || 0}</h2>
-        <div className="sub">CryptoBot · USDT</div>
+        <h2>Оплата товара #{itemId}</h2>
 
-        {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
-
-        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
-          {loading ? "Создаю счёт..." : "Оплатить криптой"}
+        <button className="btn main" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+          {loading ? "Создаю счет..." : "Оплатить криптой"}
         </button>
 
-        <div className="row">
-          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
-            Открыть оплату ещё раз
+        {payUrl && (
+          <button className="btn pay" onClick={openPayLink}>
+            Перейти к оплате
           </button>
+        )}
 
-          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
+        {invoiceId && (
+          <button className="btn" onClick={checkPaymentOnce} disabled={checking}>
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
-        </div>
+        )}
 
-        {invoiceId && <div className="meta">Invoice ID: {invoiceId}</div>}
         {statusText && <div className="status">{statusText}</div>}
 
         <div className="hint">
-          На ПК мини-апп может закрываться при переходе в CryptoBot — это нормально. Вернись назад, статус подтянется автоматически.
+          После оплаты вернись назад в приложение — статус обновится автоматически.
         </div>
       </div>
 
@@ -169,79 +151,42 @@ export default function CheckoutClient() {
           background: #0b0f14;
           display: flex;
           justify-content: center;
-          padding: 22px 14px;
-          color: #eaf0ff;
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          padding: 20px;
+          color: #fff;
         }
         .card {
           width: 100%;
-          max-width: 520px;
+          max-width: 420px;
           background: #111826;
-          border: 1px solid rgba(234, 240, 255, 0.12);
-          border-radius: 18px;
-          padding: 16px;
-          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
-        }
-        .title {
-          margin: 0;
-          font-size: 20px;
-        }
-        .sub {
-          margin-top: 6px;
-          font-size: 13px;
-          color: rgba(234, 240, 255, 0.7);
-        }
-        .alert {
-          margin-top: 12px;
-          padding: 10px 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 107, 107, 0.25);
-          background: rgba(255, 107, 107, 0.1);
-          color: #ff6b6b;
-          font-weight: 600;
+          border-radius: 16px;
+          padding: 20px;
         }
         .btn {
           width: 100%;
           margin-top: 12px;
-          padding: 12px 14px;
-          border-radius: 12px;
-          border: 1px solid rgba(234, 240, 255, 0.14);
-          background: rgba(255, 255, 255, 0.06);
-          color: #eaf0ff;
+          padding: 12px;
+          border-radius: 10px;
+          border: none;
+          background: #2a2f3a;
+          color: #fff;
           cursor: pointer;
         }
-        .btn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
+        .main {
+          background: #1f6fff;
+          font-weight: bold;
         }
-        .primary {
-          background: rgba(124, 255, 178, 0.14);
-          border-color: rgba(124, 255, 178, 0.25);
-          font-weight: 700;
-        }
-        .row {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-        .row .btn {
-          width: auto;
-          flex: 1 1 200px;
-        }
-        .meta {
-          margin-top: 12px;
-          font-size: 13px;
-          opacity: 0.75;
+        .pay {
+          background: #16c784;
+          font-weight: bold;
         }
         .status {
-          margin-top: 8px;
-          font-weight: 800;
+          margin-top: 10px;
+          font-weight: bold;
         }
         .hint {
-          margin-top: 12px;
+          margin-top: 14px;
           font-size: 13px;
-          line-height: 1.4;
-          opacity: 0.75;
+          opacity: 0.7;
         }
       `}</style>
     </div>
