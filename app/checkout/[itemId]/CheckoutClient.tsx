@@ -1,5 +1,4 @@
 "use client";
-const BUILD_MARK = "BUILD 2026-03-02 v1";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -13,7 +12,6 @@ export default function CheckoutClient() {
 
   const [invoiceId, setInvoiceId] = useState<number | null>(null);
   const [payUrl, setPayUrl] = useState<string>("");
-  const [urlKind, setUrlKind] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
@@ -21,44 +19,21 @@ export default function CheckoutClient() {
   const lastCheckRef = useRef(0);
   const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
 
-  // Надёжное открытие ссылки в Telegram WebApp (и fallback)
   function openPayLink(url: string) {
-    if (!url) {
-      alert("pay_url пустой — счёт создался без ссылки (это не норма).");
-      return;
-    }
+    if (!url) return;
 
     // @ts-ignore
     const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
 
-    // Если Telegram WebApp доступен — используем его (window.open часто блокируется)
-    if (tg) {
-      try {
-        if (typeof tg.openLink === "function") {
-          tg.openLink(url, { try_instant_view: false });
-          return;
-        }
-        if (typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
-          // на всякий случай пробуем оба формата
-          try {
-            tg.openTelegramLink(url);
-            return;
-          } catch {
-            const cleaned = url.replace(/^https?:\/\//i, "");
-            tg.openTelegramLink(cleaned);
-            return;
-          }
-        }
-      } catch (e) {
-        // упадём в fallback ниже
-      }
+    // ✅ Открываем именно телеграм-ссылку (t.me/...) внутри Telegram, без Safari
+    if (tg && typeof tg.openTelegramLink === "function") {
+      const cleaned = url.replace(/^https?:\/\//i, ""); // openTelegramLink любит "t.me/..."
+      tg.openTelegramLink(cleaned);
+      return;
     }
 
-    // Fallback вне Telegram (или если Telegram API недоступен)
-    const w = window.open(url, "_blank");
-    if (!w) {
-      alert("Браузер/Telegram заблокировал открытие ссылки. Нужен Telegram.WebApp.openLink.");
-    }
+    // fallback если открыто не в Telegram
+    window.open(url, "_blank");
   }
 
   async function checkPaymentOnce(id?: number | null) {
@@ -98,13 +73,11 @@ export default function CheckoutClient() {
     try {
       setLoading(true);
 
-      const amount = "1"; // TODO цена по itemId
-
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount,
+          amount: "1",
           description: `Оплата товара #${itemId}`,
           payload: `item_${itemId}_${Date.now()}`,
         }),
@@ -119,11 +92,9 @@ export default function CheckoutClient() {
 
       setInvoiceId(data.invoice_id);
       setPayUrl(data.pay_url);
-      setUrlKind(data.kind || "");
       setPayStatus(data.status || "active");
 
-      // ✅ Как раньше: сразу пытаемся открыть оплату
-      // Если Telegram/браузер заблокирует — у тебя останется кнопка "Открыть оплату"
+      // ✅ Сразу открываем CryptoBot (как раньше)
       openPayLink(data.pay_url);
     } finally {
       setLoading(false);
@@ -153,12 +124,6 @@ export default function CheckoutClient() {
     <div className="wrap">
       <div className="card">
         <h2 className="title">Оплата товара #{itemId || 0}</h2>
-        
-        <div style={{ opacity: 0.6, fontSize: 12, marginTop: 6 }}>
-        BUILD TEST v1
-      </div>
-
-        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
 
         {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
 
@@ -180,7 +145,7 @@ export default function CheckoutClient() {
         {statusText && <div className="status">{statusText}</div>}
 
         <div className="hint">
-          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется автоматически.
+          Мини-апп может сворачиваться при переходе в CryptoBot — это нормально. Вернись назад, статус обновится автоматически.
         </div>
       </div>
 
@@ -207,11 +172,6 @@ export default function CheckoutClient() {
           margin: 0;
           font-size: 20px;
         }
-        .sub {
-          margin-top: 6px;
-          font-size: 13px;
-          color: rgba(234, 240, 255, 0.7);
-        }
         .alert {
           margin-top: 12px;
           padding: 10px 12px;
@@ -219,7 +179,7 @@ export default function CheckoutClient() {
           border: 1px solid rgba(255, 107, 107, 0.25);
           background: rgba(255, 107, 107, 0.1);
           color: #ff6b6b;
-          font-weight: 700;
+          font-weight: 800;
         }
         .btn {
           padding: 12px 14px;
@@ -229,6 +189,7 @@ export default function CheckoutClient() {
           color: #eaf0ff;
           cursor: pointer;
           width: 100%;
+          margin-top: 12px;
         }
         .btn:disabled {
           opacity: 0.55;
@@ -237,17 +198,17 @@ export default function CheckoutClient() {
         .primary {
           background: rgba(124, 255, 178, 0.14);
           border-color: rgba(124, 255, 178, 0.25);
-          font-weight: 800;
+          font-weight: 900;
         }
         .row {
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
-          margin-top: 10px;
+          margin-top: 6px;
         }
         .row .btn {
           width: auto;
-          flex: 1 1 200px;
+          flex: 1 1 220px;
         }
         .meta {
           margin-top: 12px;
