@@ -1,4 +1,5 @@
 "use client";
+const BUILD_MARK = "BUILD 2026-03-02 v1";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -152,6 +153,11 @@ export default function CheckoutClient() {
     <div className="wrap">
       <div className="card">
         <h2 className="title">Оплата товара #{itemId || 0}</h2>
+        
+        <div style={{ opacity: 0.6, fontSize: 12, marginTop: 6 }}>
+        BUILD TEST v1
+      </div>
+
         <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
 
         {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
