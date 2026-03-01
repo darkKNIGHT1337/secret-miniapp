@@ -11,7 +11,8 @@ export default function CheckoutClient() {
   const itemId = Number(params?.itemId ?? 0);
 
   const [invoiceId, setInvoiceId] = useState<number | null>(null);
-  const [payUrl, setPayUrl] = useState("");
+  const [payUrl, setPayUrl] = useState<string>("");
+  const [urlKind, setUrlKind] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
@@ -19,38 +20,92 @@ export default function CheckoutClient() {
   const lastCheckRef = useRef(0);
   const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
 
-  // Открытие CryptoBot (ТОЛЬКО по кнопке пользователя)
-  function openPayLink() {
-    if (!payUrl) return;
+  // Надёжное открытие ссылки в Telegram WebApp (и fallback)
+  function openPayLink(url: string) {
+    if (!url) {
+      alert("pay_url пустой — счёт создался без ссылки (это не норма).");
+      return;
+    }
 
     // @ts-ignore
-    const tg = window?.Telegram?.WebApp;
+    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
 
-    if (tg && tg.openTelegramLink && payUrl.includes("t.me")) {
-      const cleaned = payUrl.replace(/^https?:\/\//, "");
-      tg.openTelegramLink(cleaned);
-      return;
+    // Если Telegram WebApp доступен — используем его (window.open часто блокируется)
+    if (tg) {
+      try {
+        if (typeof tg.openLink === "function") {
+          tg.openLink(url, { try_instant_view: false });
+          return;
+        }
+        if (typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
+          // на всякий случай пробуем оба формата
+          try {
+            tg.openTelegramLink(url);
+            return;
+          } catch {
+            const cleaned = url.replace(/^https?:\/\//i, "");
+            tg.openTelegramLink(cleaned);
+            return;
+          }
+        }
+      } catch (e) {
+        // упадём в fallback ниже
+      }
     }
 
-    if (tg && tg.openLink) {
-      tg.openLink(payUrl);
-      return;
+    // Fallback вне Telegram (или если Telegram API недоступен)
+    const w = window.open(url, "_blank");
+    if (!w) {
+      alert("Браузер/Telegram заблокировал открытие ссылки. Нужен Telegram.WebApp.openLink.");
     }
+  }
 
-    window.open(payUrl, "_blank");
+  async function checkPaymentOnce(id?: number | null) {
+    const targetId = id ?? invoiceId;
+    if (!targetId) return;
+
+    const now = Date.now();
+    if (now - lastCheckRef.current < 1500) return;
+    lastCheckRef.current = now;
+
+    setChecking(true);
+    try {
+      const res = await fetch("/api/cryptobot/check-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_id: targetId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPayStatus("unknown");
+        alert(data?.error || "Ошибка проверки оплаты");
+        return;
+      }
+
+      const status = (data?.status || "unknown") as PayStatus;
+      setPayStatus(status);
+
+      if (status === "paid") router.push(`/access/${itemId}`);
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function payWithCrypto() {
     try {
       setLoading(true);
 
+      const amount = "1"; // TODO цена по itemId
+
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: "1",
+          amount,
           description: `Оплата товара #${itemId}`,
-          payload: `item_${itemId}_${Date.now()}`
+          payload: `item_${itemId}_${Date.now()}`,
         }),
       });
 
@@ -63,50 +118,22 @@ export default function CheckoutClient() {
 
       setInvoiceId(data.invoice_id);
       setPayUrl(data.pay_url);
-      setPayStatus("active");
+      setUrlKind(data.kind || "");
+      setPayStatus(data.status || "active");
 
-      // ❗ НЕ открываем автоматически
+      // ✅ Как раньше: сразу пытаемся открыть оплату
+      // Если Telegram/браузер заблокирует — у тебя останется кнопка "Открыть оплату"
+      openPayLink(data.pay_url);
     } finally {
       setLoading(false);
     }
   }
 
-  async function checkPaymentOnce() {
-    if (!invoiceId) return;
-
-    const now = Date.now();
-    if (now - lastCheckRef.current < 1500) return;
-    lastCheckRef.current = now;
-
-    setChecking(true);
-
-    try {
-      const res = await fetch("/api/cryptobot/check-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice_id: invoiceId }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) return;
-
-      const status = data?.status || "unknown";
-      setPayStatus(status);
-
-      if (status === "paid") {
-        router.push(`/access/${itemId}`);
-      }
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  // Автопроверка при возврате
+  // авто-проверка при возвращении
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
-        checkPaymentOnce();
+        checkPaymentOnce(invoiceId);
       }
     }
     document.addEventListener("visibilitychange", onVisible);
@@ -114,34 +141,40 @@ export default function CheckoutClient() {
   }, [invoiceId]);
 
   let statusText = "";
-  if (payStatus === "active") statusText = "Ожидает оплаты…";
   if (payStatus === "paid") statusText = "Оплачено ✅";
+  else if (payStatus === "active") statusText = "Ожидает оплаты…";
+  else if (payStatus === "expired") statusText = "Счёт истёк";
+  else if (payStatus === "cancelled") statusText = "Отменено";
+  else if (payStatus === "unknown") statusText = "Статус неизвестен";
+  else if (payStatus) statusText = `Статус: ${payStatus}`;
 
   return (
     <div className="wrap">
       <div className="card">
-        <h2>Оплата товара #{itemId}</h2>
+        <h2 className="title">Оплата товара #{itemId || 0}</h2>
+        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
 
-        <button className="btn main" onClick={payWithCrypto} disabled={loading || isBadItemId}>
-          {loading ? "Создаю счет..." : "Оплатить криптой"}
+        {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
+
+        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+          {loading ? "Создаю счёт..." : "Оплатить криптой"}
         </button>
 
-        {payUrl && (
-          <button className="btn pay" onClick={openPayLink}>
-            Перейти к оплате
+        <div className="row">
+          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
+            Открыть оплату ещё раз
           </button>
-        )}
 
-        {invoiceId && (
-          <button className="btn" onClick={checkPaymentOnce} disabled={checking}>
+          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
-        )}
+        </div>
 
+        {invoiceId && <div className="meta">Invoice ID: {invoiceId}</div>}
         {statusText && <div className="status">{statusText}</div>}
 
         <div className="hint">
-          После оплаты вернись назад в приложение — статус обновится автоматически.
+          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется автоматически.
         </div>
       </div>
 
@@ -151,42 +184,79 @@ export default function CheckoutClient() {
           background: #0b0f14;
           display: flex;
           justify-content: center;
-          padding: 20px;
-          color: #fff;
+          padding: 22px 14px;
+          color: #eaf0ff;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         .card {
           width: 100%;
-          max-width: 420px;
+          max-width: 520px;
           background: #111826;
-          border-radius: 16px;
-          padding: 20px;
+          border: 1px solid rgba(234, 240, 255, 0.12);
+          border-radius: 18px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+        }
+        .title {
+          margin: 0;
+          font-size: 20px;
+        }
+        .sub {
+          margin-top: 6px;
+          font-size: 13px;
+          color: rgba(234, 240, 255, 0.7);
+        }
+        .alert {
+          margin-top: 12px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 107, 107, 0.25);
+          background: rgba(255, 107, 107, 0.1);
+          color: #ff6b6b;
+          font-weight: 700;
         }
         .btn {
-          width: 100%;
-          margin-top: 12px;
-          padding: 12px;
-          border-radius: 10px;
-          border: none;
-          background: #2a2f3a;
-          color: #fff;
+          padding: 12px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(234, 240, 255, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: #eaf0ff;
           cursor: pointer;
+          width: 100%;
         }
-        .main {
-          background: #1f6fff;
-          font-weight: bold;
+        .btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
-        .pay {
-          background: #16c784;
-          font-weight: bold;
+        .primary {
+          background: rgba(124, 255, 178, 0.14);
+          border-color: rgba(124, 255, 178, 0.25);
+          font-weight: 800;
+        }
+        .row {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 10px;
+        }
+        .row .btn {
+          width: auto;
+          flex: 1 1 200px;
+        }
+        .meta {
+          margin-top: 12px;
+          font-size: 13px;
+          opacity: 0.75;
         }
         .status {
-          margin-top: 10px;
-          font-weight: bold;
+          margin-top: 8px;
+          font-weight: 900;
         }
         .hint {
-          margin-top: 14px;
+          margin-top: 12px;
           font-size: 13px;
-          opacity: 0.7;
+          opacity: 0.75;
+          line-height: 1.4;
         }
       `}</style>
     </div>
