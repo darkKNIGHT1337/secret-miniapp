@@ -33,18 +33,29 @@ export default function CheckoutClient() {
 
   // Инициализация Telegram WebApp (если мы реально внутри Telegram)
   useEffect(() => {
-    // @ts-ignore
-    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
-    const ok = !!tg;
-    setTgOk(ok);
+  // @ts-ignore
+  const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
+  if (!tg) return;
 
-    if (tg) {
-      try {
-        tg.ready();
-        tg.expand?.();
-      } catch {}
+  try {
+    if (invoiceId) {
+      tg.MainButton.setText("Я оплатил ✅");
+      tg.MainButton.show();
+
+      const onClick = () => checkPaymentOnce(invoiceId);
+      tg.MainButton.onClick(onClick);
+
+      return () => {
+        try {
+          tg.MainButton.offClick(onClick);
+          tg.MainButton.hide();
+        } catch {}
+      };
+    } else {
+      tg.MainButton.hide();
     }
-  }, []);
+  } catch {}
+}, [invoiceId]);
 
   // Надёжное открытие ссылки в Telegram WebApp (и fallback)
   function openPayLink(url: string) {
