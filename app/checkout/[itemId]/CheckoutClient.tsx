@@ -12,6 +12,16 @@ type PayStatus =
   | "unknown"
   | string;
 
+type SavedCheckout = {
+  v: 1;
+  itemId: number;
+  invoiceId: number;
+  payUrl: string;
+  kind?: string;
+  status?: PayStatus;
+  createdAt: number;
+};
+
 export default function CheckoutClient() {
   const params = useParams<{ itemId?: string }>();
   const router = useRouter();
@@ -25,83 +35,81 @@ export default function CheckoutClient() {
   const [payStatus, setPayStatus] = useState<PayStatus>("");
 
   const lastCheckRef = useRef(0);
+  const restoredRef = useRef(false);
+
   const isBadItemId = useMemo(
     () => !Number.isFinite(itemId) || itemId <= 0,
     [itemId]
   );
 
-  // --- Telegram SDK loader (супер-надёжно) ---
-  function loadTelegramSdk(): Promise<void> {
-    return new Promise((resolve) => {
-      if (typeof window === "undefined") return resolve();
+  const storageKey = useMemo(() => `secretshop_checkout_v1_${itemId}`, [itemId]);
 
-      // уже есть
-      if ((window as any)?.Telegram?.WebApp) return resolve();
-
-      // уже добавляли скрипт
-      const existing = document.querySelector(
-        'script[data-telegram-webapp="1"]'
-      ) as HTMLScriptElement | null;
-
-      if (existing) {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        // если уже успел загрузиться
-        setTimeout(() => resolve(), 300);
-        return;
-      }
-
-      const s = document.createElement("script");
-      s.src = "https://telegram.org/js/telegram-web-app.js";
-      s.async = true;
-      s.dataset.telegramWebapp = "1";
-      s.onload = () => resolve();
-      s.onerror = () => resolve(); // не падаем
-      document.head.appendChild(s);
-
-      // safety
-      setTimeout(() => resolve(), 800);
-    });
+  function safeSetSaved(data: SavedCheckout) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(data));
+    } catch {}
   }
 
-  async function getTgWebApp() {
-    await loadTelegramSdk();
-    return (window as any)?.Telegram?.WebApp;
+  function safeClearSaved() {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {}
   }
 
-  // Инициализация (если WebApp реально есть)
-  useEffect(() => {
-    (async () => {
-      const tg = await getTgWebApp();
-      if (tg) {
-        try {
-          tg.ready();
-          tg.expand?.();
-        } catch {}
-      }
-    })();
-  }, []);
+  function safeGetSaved(): SavedCheckout | null {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as SavedCheckout;
+      if (!parsed || parsed.v !== 1) return null;
+      if (parsed.itemId !== itemId) return null;
+      if (!parsed.invoiceId) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
 
-  // Открытие оплаты: ТОЛЬКО через Telegram WebApp (без браузера)
-  async function openPayLink(url: string) {
+  // Надёжное открытие ссылки в Telegram WebApp (и fallback)
+  function openPayLink(url: string) {
     if (!url) {
       alert("pay_url пустой — счёт создался без ссылки (это не норма).");
       return;
     }
 
-    const tg = await getTgWebApp();
+    // @ts-ignore
+    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
 
-    // Только WebApp-режим
-    if (tg && typeof tg.openLink === "function") {
-      // Желаем https pay.crypt.bot (чтобы оставаться в мини-аппе)
-      tg.openLink(url, { try_instant_view: false });
-      return;
+    const isTelegramLink = /(^https?:\/\/)?t\.me\//i.test(url);
+    const isHttp = /^https?:\/\//i.test(url);
+
+    if (tg) {
+      try {
+        // ✅ 1) https (pay.crypt.bot) — открываем как webview/оверлей (mini app чаще остаётся)
+        if (isHttp && typeof tg.openLink === "function") {
+          tg.openLink(url, { try_instant_view: false });
+          return;
+        }
+
+        // ✅ 2) t.me — откроет чат/бот (может выглядеть как “закрытие”)
+        if (isTelegramLink && typeof tg.openTelegramLink === "function") {
+          const cleaned = url.replace(/^https?:\/\//i, "");
+          tg.openTelegramLink(cleaned);
+          return;
+        }
+
+        // ✅ 3) fallback внутри Telegram
+        if (typeof tg.openLink === "function") {
+          tg.openLink(url, { try_instant_view: false });
+          return;
+        }
+      } catch {
+        // упадём ниже
+      }
     }
 
-    alert(
-      "Telegram WebApp не активен. Это НЕ mini app режим.\n" +
-        "Сделай в BotFather: /setdomain -> secret-miniapp.vercel.app\n" +
-        "И открывай через кнопку Web App."
-    );
+    // Fallback вне Telegram
+    window.location.href = url;
   }
 
   async function checkPaymentOnce(id?: number | null) {
@@ -124,6 +132,11 @@ export default function CheckoutClient() {
 
       if (!res.ok) {
         setPayStatus("unknown");
+        // сохраняем, что статус неизвестен — чтобы при перезапуске не терялось
+        const saved = safeGetSaved();
+        if (saved) {
+          safeSetSaved({ ...saved, status: "unknown" });
+        }
         alert(data?.error || "Ошибка проверки оплаты");
         return;
       }
@@ -131,7 +144,15 @@ export default function CheckoutClient() {
       const status = (data?.status || "unknown") as PayStatus;
       setPayStatus(status);
 
-      if (status === "paid") router.push(`/access/${itemId}`);
+      // сохраняем новый статус
+      const saved = safeGetSaved();
+      if (saved) safeSetSaved({ ...saved, status });
+
+      if (status === "paid") {
+        // чистим сохранение и пускаем дальше
+        safeClearSaved();
+        router.push(`/access/${itemId}`);
+      }
     } finally {
       setChecking(false);
     }
@@ -160,17 +181,52 @@ export default function CheckoutClient() {
         return;
       }
 
-      setInvoiceId(data.invoice_id);
-      setPayUrl(data.pay_url);
-      setUrlKind(data.kind || "");
-      setPayStatus(data.status || "active");
+      const newInvoiceId = Number(data.invoice_id);
+      const newPayUrl = String(data.pay_url || "");
+      const newKind = String(data.kind || "");
+      const newStatus = (data.status || "active") as PayStatus;
+
+      setInvoiceId(newInvoiceId);
+      setPayUrl(newPayUrl);
+      setUrlKind(newKind);
+      setPayStatus(newStatus);
+
+      // ✅ ЖЕЛЕЗНО сохраняем в localStorage
+      safeSetSaved({
+        v: 1,
+        itemId,
+        invoiceId: newInvoiceId,
+        payUrl: newPayUrl,
+        kind: newKind,
+        status: newStatus,
+        createdAt: Date.now(),
+      });
 
       // ✅ Как раньше: сразу пытаемся открыть оплату
-      await openPayLink(data.pay_url);
+      openPayLink(newPayUrl);
     } finally {
       setLoading(false);
     }
   }
+
+  // ✅ Восстановление состояния при старте (если Telegram/OS выгрузил mini app)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    const saved = safeGetSaved();
+    if (!saved) return;
+
+    setInvoiceId(saved.invoiceId);
+    setPayUrl(saved.payUrl || "");
+    setUrlKind(saved.kind || "");
+    setPayStatus(saved.status || "active");
+
+    // сразу попробуем подтянуть актуальный статус
+    checkPaymentOnce(saved.invoiceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId]);
 
   // авто-проверка при возвращении
   useEffect(() => {
@@ -195,30 +251,20 @@ export default function CheckoutClient() {
     <div className="wrap">
       <div className="card">
         <h2 className="title">Оплата товара #{itemId || 0}</h2>
-        <div className="sub">
-          CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}
-        </div>
+        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
 
         {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
 
-        <button
-          className="btn primary"
-          onClick={payWithCrypto}
-          disabled={loading || isBadItemId}
-        >
-          {loading ? "Создаю счёт..." : "Оплатить криптой"}
+        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+          {loading ? "Создаю счёт..." : invoiceId ? "Создать новый счёт" : "Оплатить криптой"}
         </button>
 
         <div className="row">
           <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
-            Открыть оплату ещё раз
+            Открыть оплату
           </button>
 
-          <button
-            className="btn"
-            onClick={() => checkPaymentOnce()}
-            disabled={!invoiceId || checking}
-          >
+          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
         </div>
@@ -227,7 +273,7 @@ export default function CheckoutClient() {
         {statusText && <div className="status">{statusText}</div>}
 
         <div className="hint">
-          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется автоматически.
+          Даже если Telegram “закроет” мини-апп при оплате — при возвращении сюда счёт восстановится и статус обновится автоматически.
         </div>
       </div>
 
@@ -239,8 +285,7 @@ export default function CheckoutClient() {
           justify-content: center;
           padding: 22px 14px;
           color: #eaf0ff;
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
-            sans-serif;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         .card {
           width: 100%;
