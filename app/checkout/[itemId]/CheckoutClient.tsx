@@ -42,7 +42,7 @@ export default function CheckoutClient() {
     [itemId]
   );
 
-  const storageKey = `checkout_${itemId}`;
+  const storageKey = `checkout_secure_${itemId}`;
 
   function saveState(data: SavedCheckout) {
     try {
@@ -68,9 +68,9 @@ export default function CheckoutClient() {
     } catch {}
   }
 
-  // --- Telegram support ---
+  // Telegram
   function openSupport() {
-    const username = "YOUR_USERNAME"; // ← заменить
+    const username = "YOUR_USERNAME";
     const url = `https://t.me/${username}`;
 
     // @ts-ignore
@@ -186,7 +186,7 @@ export default function CheckoutClient() {
     checkPaymentOnce(saved.invoiceId);
   }, [itemId]);
 
-  // проверка при возврате
+  // авто-проверка при возврате
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
@@ -199,10 +199,10 @@ export default function CheckoutClient() {
 
   return (
     <div className="wrap">
-      <div className="card">
-        <h2 className="title">Secure Checkout</h2>
+      <div className="panel">
+        <h2 className="title">Secure Operation</h2>
         <div className="sub">
-          Товар #{itemId} · CryptoBot USDT {urlKind && `· ${urlKind}`}
+          Checkout · Item #{itemId} · CryptoBot USDT {urlKind && `· ${urlKind}`}
         </div>
 
         <button
@@ -210,7 +210,7 @@ export default function CheckoutClient() {
           onClick={payWithCrypto}
           disabled={loading || isBadItemId}
         >
-          {loading ? "Создание счета..." : "Оплатить"}
+          {loading ? "Создание счета..." : "Инициализировать оплату"}
         </button>
 
         <div className="row">
@@ -227,20 +227,18 @@ export default function CheckoutClient() {
             onClick={() => checkPaymentOnce()}
             disabled={!invoiceId || checking}
           >
-            {checking ? "Проверка..." : "Проверить"}
+            {checking ? "Проверка..." : "Проверить статус"}
           </button>
         </div>
 
-        {invoiceId && (
-          <div className="meta">Invoice #{invoiceId}</div>
-        )}
+        {invoiceId && <div className="meta">Session #{invoiceId}</div>}
 
         {payStatus && (
           <div className="status">
             {payStatus === "paid"
-              ? "Оплачено"
+              ? "Операция подтверждена"
               : payStatus === "active"
-              ? "Ожидает оплаты"
+              ? "Ожидание оплаты"
               : payStatus}
           </div>
         )}
@@ -248,9 +246,10 @@ export default function CheckoutClient() {
         <div className="divider" />
 
         <div className="protocol">
-          <div>• Сессия оплаты сохранена</div>
-          <div>• Статус проверяется автоматически</div>
-          <div>• При возврате операция восстановится</div>
+          <div className="pTitle">Протокол</div>
+          <div>• Сессия сохранена</div>
+          <div>• Автоматическая проверка при возврате</div>
+          <div>• Восстановление после закрытия Telegram</div>
         </div>
 
         <button className="supportBtn" onClick={openSupport}>
@@ -270,15 +269,15 @@ export default function CheckoutClient() {
           font-family: system-ui;
         }
 
-        .card {
+        .panel {
           width: 100%;
-          max-width: 480px;
-          background: rgba(17, 24, 38, 0.8);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 18px;
+          max-width: 520px;
+          background: rgba(17, 24, 38, 0.9);
+          backdrop-filter: blur(18px);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 20px;
           padding: 18px;
-          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 40px 100px rgba(0,0,0,0.7);
         }
 
         .title {
@@ -297,8 +296,8 @@ export default function CheckoutClient() {
           margin-top: 12px;
           padding: 12px;
           border-radius: 12px;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255,255,255,0.15);
+          background: rgba(255,255,255,0.05);
           color: #fff;
           width: 100%;
           cursor: pointer;
@@ -329,23 +328,25 @@ export default function CheckoutClient() {
         .divider {
           margin: 16px 0;
           height: 1px;
-          background: rgba(255, 255, 255, 0.1);
+          background: rgba(255,255,255,0.1);
         }
 
         .protocol {
           font-size: 13px;
-          opacity: 0.75;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
+          opacity: 0.8;
+        }
+
+        .pTitle {
+          font-weight: 800;
+          margin-bottom: 6px;
         }
 
         .supportBtn {
           margin-top: 12px;
           padding: 12px;
           border-radius: 12px;
-          border: 1px solid rgba(120, 162, 255, 0.4);
-          background: rgba(120, 162, 255, 0.15);
+          border: 1px solid rgba(120,162,255,0.4);
+          background: rgba(120,162,255,0.15);
           color: #fff;
           font-weight: 800;
           cursor: pointer;
