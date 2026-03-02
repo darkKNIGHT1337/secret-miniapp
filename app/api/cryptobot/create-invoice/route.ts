@@ -33,25 +33,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "CryptoBot API error", details: data }, { status: 502 });
     }
 
-    const invoice = data.result;
+    const inv = data.result;
 
-    // ✅ Главное: сначала пытаемся взять web-оплату (обычно НЕ закрывает мини-апп)
-    const bestUrl =
-      invoice.web_app_pay_url || // лучший вариант для мини-аппы
-      invoice.pay_url ||         // обычно тоже web-страница
-      invoice.mini_app_invoice_url ||
-      invoice.bot_invoice_url;
+    // ✅ web-оплата (у тебя это работало)
+    const webPayUrl = inv.web_app_pay_url || inv.pay_url || "";
+    // ✅ оплата через бота (запасной вариант)
+    const botPayUrl = inv.bot_invoice_url || inv.mini_app_invoice_url || "";
 
+    const bestUrl = webPayUrl || botPayUrl;
     if (!bestUrl) {
-      return NextResponse.json({ error: "No pay url in invoice", invoice }, { status: 502 });
+      return NextResponse.json({ error: "No pay url in invoice", invoice: inv }, { status: 502 });
     }
 
     return NextResponse.json({
-      invoice_id: invoice.invoice_id,
+      invoice_id: inv.invoice_id,
+      status: inv.status,
       pay_url: bestUrl,
-      status: invoice.status,
-      // чтобы можно было понять, что именно пришло (для дебага)
-      kind: invoice.web_app_pay_url ? "web_app_pay_url" : invoice.pay_url ? "pay_url" : invoice.bot_invoice_url ? "bot_invoice_url" : "other",
+      web_pay_url: webPayUrl,
+      bot_pay_url: botPayUrl,
+      kind: webPayUrl ? "web" : botPayUrl ? "bot" : "unknown",
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
