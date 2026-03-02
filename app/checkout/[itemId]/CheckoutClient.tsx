@@ -120,7 +120,7 @@ export default function CheckoutClient() {
 
   // ✅ ДОБАВЛЕНО: открыть поддержку (внутри Telegram)
   function openSupport() {
-    const username = "YOUR_USERNAME"; // ← замени на свой username без @
+    const username = "cantworry"; // ← замени на свой username без @
 
     // @ts-ignore
     const tg =
