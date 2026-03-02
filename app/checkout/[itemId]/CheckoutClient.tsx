@@ -11,29 +11,56 @@ export default function CheckoutClient() {
   const itemId = Number(params?.itemId ?? 0);
 
   const [invoiceId, setInvoiceId] = useState<number | null>(null);
-  const [payUrl, setPayUrl] = useState<string>("");
+  const [payUrl, setPayUrl] = useState("");
+  const [webPayUrl, setWebPayUrl] = useState("");
+  const [botPayUrl, setBotPayUrl] = useState("");
+  const [kind, setKind] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
 
+  const [debug, setDebug] = useState<string>("debug: init");
   const lastCheckRef = useRef(0);
+
   const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
 
-  function openPayLink(url: string) {
-    if (!url) return;
-
+  function getTg() {
     // @ts-ignore
-    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
+    return typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
+  }
 
-    // ✅ Открываем именно телеграм-ссылку (t.me/...) внутри Telegram, без Safari
-    if (tg && typeof tg.openTelegramLink === "function") {
-      const cleaned = url.replace(/^https?:\/\//i, ""); // openTelegramLink любит "t.me/..."
+  function openAny(url: string) {
+    if (!url) {
+      alert("Ссылка оплаты пустая (url = пусто).");
+      return;
+    }
+
+    const tg = getTg();
+
+    // DEBUG
+    setDebug(
+      `openAny: tg=${tg ? "YES" : "NO"} url=${url.slice(0, 32)}...`
+    );
+
+    // Если это t.me — лучше openTelegramLink
+    if (tg && typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
+      const cleaned = url.replace(/^https?:\/\//i, "");
       tg.openTelegramLink(cleaned);
       return;
     }
 
-    // fallback если открыто не в Telegram
-    window.open(url, "_blank");
+    // Обычные ссылки — openLink
+    if (tg && typeof tg.openLink === "function") {
+      tg.openLink(url, { try_instant_view: false });
+      return;
+    }
+
+    // Фолбэк
+    const w = window.open(url, "_blank");
+    if (!w) {
+      alert("Открытие заблокировано. Это поведение Telegram/браузера.");
+    }
   }
 
   async function checkPaymentOnce(id?: number | null) {
@@ -63,7 +90,9 @@ export default function CheckoutClient() {
       const status = (data?.status || "unknown") as PayStatus;
       setPayStatus(status);
 
-      if (status === "paid") router.push(`/access/${itemId}`);
+      if (status === "paid") {
+        router.push(`/access/${itemId}`);
+      }
     } finally {
       setChecking(false);
     }
@@ -91,18 +120,27 @@ export default function CheckoutClient() {
       }
 
       setInvoiceId(data.invoice_id);
-      setPayUrl(data.pay_url);
       setPayStatus(data.status || "active");
 
-      // ✅ Сразу открываем CryptoBot (как раньше)
-      openPayLink(data.pay_url);
+      setPayUrl(data.pay_url || "");
+      setWebPayUrl(data.web_pay_url || "");
+      setBotPayUrl(data.bot_pay_url || "");
+      setKind(data.kind || "");
+
+      // ✅ как у тебя “всё заебись было” — сразу открываем
+      openAny(data.pay_url);
     } finally {
       setLoading(false);
     }
   }
 
-  // авто-проверка при возвращении
+  // авто-проверка при возврате
   useEffect(() => {
+    const tg = getTg();
+    setDebug(
+      `debug: tg=${tg ? "YES" : "NO"} openLink=${tg?.openLink ? "YES" : "NO"} openTelegramLink=${tg?.openTelegramLink ? "YES" : "NO"} ua=${navigator.userAgent.slice(0, 40)}...`
+    );
+
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
         checkPaymentOnce(invoiceId);
@@ -121,111 +159,72 @@ export default function CheckoutClient() {
   else if (payStatus) statusText = `Статус: ${payStatus}`;
 
   return (
-    <div className="wrap">
-      <div className="card">
-        <h2 className="title">Оплата товара #{itemId || 0}</h2>
+    <div style={{ minHeight: "100vh", background: "#0b0f14", padding: 16, color: "#eaf0ff" }}>
+      <div style={{ maxWidth: 560, margin: "0 auto", background: "#111826", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <h2 style={{ margin: 0 }}>Оплата товара #{itemId || 0}</h2>
+        <div style={{ opacity: 0.65, fontSize: 12, marginTop: 6 }}>
+          BUILD TEST v1 · kind={kind || "—"}
+        </div>
 
-        {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
+        <div style={{ opacity: 0.6, fontSize: 12, marginTop: 8 }}>
+          {debug}
+        </div>
 
-        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+        {isBadItemId && (
+          <div style={{ marginTop: 12, padding: 10, borderRadius: 12, background: "rgba(255,107,107,0.12)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff6b6b", fontWeight: 700 }}>
+            Открой так: /checkout/1
+          </div>
+        )}
+
+        <button
+          onClick={payWithCrypto}
+          disabled={loading || isBadItemId}
+          style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid rgba(124,255,178,0.25)", background: "rgba(124,255,178,0.14)", color: "#eaf0ff", fontWeight: 800 }}
+        >
           {loading ? "Создаю счёт..." : "Оплатить криптой"}
         </button>
 
-        <div className="row">
-          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+          <button
+            onClick={() => openAny(payUrl)}
+            disabled={!payUrl}
+            style={{ flex: "1 1 240px", padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#eaf0ff" }}
+          >
             Открыть оплату ещё раз
           </button>
 
-          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
+          <button
+            onClick={() => openAny(webPayUrl)}
+            disabled={!webPayUrl}
+            style={{ flex: "1 1 240px", padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#eaf0ff" }}
+          >
+            Открыть web-оплату
+          </button>
+
+          <button
+            onClick={() => openAny(botPayUrl)}
+            disabled={!botPayUrl}
+            style={{ flex: "1 1 240px", padding: 12, borderRadius: 12, border: "1px solid rgba(31,111,255,0.28)", background: "rgba(31,111,255,0.14)", color: "#eaf0ff", fontWeight: 800 }}
+          >
+            Открыть в CryptoBot (t.me)
+          </button>
+
+          <button
+            onClick={() => checkPaymentOnce()}
+            disabled={!invoiceId || checking}
+            style={{ flex: "1 1 240px", padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#eaf0ff" }}
+          >
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
         </div>
 
-        {invoiceId && <div className="meta">Invoice ID: {invoiceId}</div>}
-        {statusText && <div className="status">{statusText}</div>}
+        {invoiceId && <div style={{ marginTop: 12, opacity: 0.75, fontSize: 13 }}>Invoice ID: {invoiceId}</div>}
+        {statusText && <div style={{ marginTop: 8, fontWeight: 900 }}>{statusText}</div>}
 
-        <div className="hint">
-          Мини-апп может сворачиваться при переходе в CryptoBot — это нормально. Вернись назад, статус обновится автоматически.
+        <div style={{ marginTop: 12, opacity: 0.75, fontSize: 13, lineHeight: 1.4 }}>
+          Если Telegram/мод выкидывает наружу — это поведение клиента. Тогда жми “Открыть в CryptoBot (t.me)” и после оплаты вернись назад — статус подтянется автоматически.
         </div>
       </div>
-
-      <style jsx>{`
-        .wrap {
-          min-height: 100vh;
-          background: #0b0f14;
-          display: flex;
-          justify-content: center;
-          padding: 22px 14px;
-          color: #eaf0ff;
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        }
-        .card {
-          width: 100%;
-          max-width: 520px;
-          background: #111826;
-          border: 1px solid rgba(234, 240, 255, 0.12);
-          border-radius: 18px;
-          padding: 16px;
-          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
-        }
-        .title {
-          margin: 0;
-          font-size: 20px;
-        }
-        .alert {
-          margin-top: 12px;
-          padding: 10px 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 107, 107, 0.25);
-          background: rgba(255, 107, 107, 0.1);
-          color: #ff6b6b;
-          font-weight: 800;
-        }
-        .btn {
-          padding: 12px 14px;
-          border-radius: 12px;
-          border: 1px solid rgba(234, 240, 255, 0.14);
-          background: rgba(255, 255, 255, 0.06);
-          color: #eaf0ff;
-          cursor: pointer;
-          width: 100%;
-          margin-top: 12px;
-        }
-        .btn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-        .primary {
-          background: rgba(124, 255, 178, 0.14);
-          border-color: rgba(124, 255, 178, 0.25);
-          font-weight: 900;
-        }
-        .row {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 6px;
-        }
-        .row .btn {
-          width: auto;
-          flex: 1 1 220px;
-        }
-        .meta {
-          margin-top: 12px;
-          font-size: 13px;
-          opacity: 0.75;
-        }
-        .status {
-          margin-top: 8px;
-          font-weight: 900;
-        }
-        .hint {
-          margin-top: 12px;
-          font-size: 13px;
-          opacity: 0.75;
-          line-height: 1.4;
-        }
-      `}</style>
     </div>
   );
 }

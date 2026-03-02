@@ -8,6 +8,9 @@ export async function POST(req: Request) {
     if (!token) return NextResponse.json({ error: "Missing CRYPTOBOT_TOKEN" }, { status: 500 });
 
     const body = await req.json();
+    const amount = String(body?.amount ?? "1");
+    const description = String(body?.description ?? "Оплата");
+    const payload = String(body?.payload ?? "");
 
     const r = await fetch(`${API}/createInvoice`, {
       method: "POST",
@@ -17,30 +20,38 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         asset: "USDT",
-        amount: String(body?.amount ?? "1"),
-        description: String(body?.description ?? "Оплата"),
-        payload: String(body?.payload ?? ""),
+        amount,
+        description,
+        payload,
         allow_anonymous: false,
         expires_in: 3600,
       }),
     });
 
     const data = await r.json();
-    if (!data?.ok) return NextResponse.json({ error: "CryptoBot API error", details: data }, { status: 502 });
+    if (!data?.ok) {
+      return NextResponse.json({ error: "CryptoBot API error", details: data }, { status: 502 });
+    }
 
     const inv = data.result;
 
-    // ✅ ВАЖНО: отдаём ССЫЛКУ НА БОТА, а не web
-    const botUrl = inv.bot_invoice_url || inv.mini_app_invoice_url;
+    // ✅ web-оплата (у тебя это работало)
+    const webPayUrl = inv.web_app_pay_url || inv.pay_url || "";
+    // ✅ оплата через бота (запасной вариант)
+    const botPayUrl = inv.bot_invoice_url || inv.mini_app_invoice_url || "";
 
-    if (!botUrl) {
-      return NextResponse.json({ error: "No bot invoice url", invoice: inv }, { status: 502 });
+    const bestUrl = webPayUrl || botPayUrl;
+    if (!bestUrl) {
+      return NextResponse.json({ error: "No pay url in invoice", invoice: inv }, { status: 502 });
     }
 
     return NextResponse.json({
       invoice_id: inv.invoice_id,
-      pay_url: botUrl,
       status: inv.status,
+      pay_url: bestUrl,
+      web_pay_url: webPayUrl,
+      bot_pay_url: botPayUrl,
+      kind: webPayUrl ? "web" : botPayUrl ? "bot" : "unknown",
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
