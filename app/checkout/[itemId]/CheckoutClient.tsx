@@ -30,34 +30,78 @@ export default function CheckoutClient() {
     [itemId]
   );
 
-  function getTg() {
-    // @ts-ignore
-    return typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
+  // --- Telegram SDK loader (супер-надёжно) ---
+  function loadTelegramSdk(): Promise<void> {
+    return new Promise((resolve) => {
+      if (typeof window === "undefined") return resolve();
+
+      // уже есть
+      if ((window as any)?.Telegram?.WebApp) return resolve();
+
+      // уже добавляли скрипт
+      const existing = document.querySelector(
+        'script[data-telegram-webapp="1"]'
+      ) as HTMLScriptElement | null;
+
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        // если уже успел загрузиться
+        setTimeout(() => resolve(), 300);
+        return;
+      }
+
+      const s = document.createElement("script");
+      s.src = "https://telegram.org/js/telegram-web-app.js";
+      s.async = true;
+      s.dataset.telegramWebapp = "1";
+      s.onload = () => resolve();
+      s.onerror = () => resolve(); // не падаем
+      document.head.appendChild(s);
+
+      // safety
+      setTimeout(() => resolve(), 800);
+    });
   }
 
-  // Надёжное открытие оплаты: ТОЛЬКО внутри Telegram (без браузера)
-  function openPayLink(url: string) {
+  async function getTgWebApp() {
+    await loadTelegramSdk();
+    return (window as any)?.Telegram?.WebApp;
+  }
+
+  // Инициализация (если WebApp реально есть)
+  useEffect(() => {
+    (async () => {
+      const tg = await getTgWebApp();
+      if (tg) {
+        try {
+          tg.ready();
+          tg.expand?.();
+        } catch {}
+      }
+    })();
+  }, []);
+
+  // Открытие оплаты: ТОЛЬКО через Telegram WebApp (без браузера)
+  async function openPayLink(url: string) {
     if (!url) {
-      alert("pay_url пустой — счёт создался без ссылки.");
+      alert("pay_url пустой — счёт создался без ссылки (это не норма).");
       return;
     }
 
-    const tg = getTg();
-    if (!tg || typeof tg.openLink !== "function") {
-      alert(
-        "Открой мини-апп внутри Telegram (через кнопку у бота). " +
-          "В браузере оплату не открываем."
-      );
+    const tg = await getTgWebApp();
+
+    // Только WebApp-режим
+    if (tg && typeof tg.openLink === "function") {
+      // Желаем https pay.crypt.bot (чтобы оставаться в мини-аппе)
+      tg.openLink(url, { try_instant_view: false });
       return;
     }
 
-    // мы ожидаем https (pay.crypt.bot/...)
-    if (!/^https?:\/\//i.test(url)) {
-      alert("Оплата пришла не https ссылкой — так mini app будет закрываться. Проверь API.");
-      return;
-    }
-
-    tg.openLink(url, { try_instant_view: false });
+    alert(
+      "Telegram WebApp не активен. Это НЕ mini app режим.\n" +
+        "Сделай в BotFather: /setdomain -> secret-miniapp.vercel.app\n" +
+        "И открывай через кнопку Web App."
+    );
   }
 
   async function checkPaymentOnce(id?: number | null) {
@@ -97,7 +141,7 @@ export default function CheckoutClient() {
     try {
       setLoading(true);
 
-      const amount = "1";
+      const amount = "1"; // TODO цена по itemId
 
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
@@ -121,8 +165,8 @@ export default function CheckoutClient() {
       setUrlKind(data.kind || "");
       setPayStatus(data.status || "active");
 
-      // ✅ Как раньше: открываем сразу, но ТОЛЬКО через tg.openLink (без браузера)
-      openPayLink(data.pay_url);
+      // ✅ Как раньше: сразу пытаемся открыть оплату
+      await openPayLink(data.pay_url);
     } finally {
       setLoading(false);
     }
@@ -151,11 +195,17 @@ export default function CheckoutClient() {
     <div className="wrap">
       <div className="card">
         <h2 className="title">Оплата товара #{itemId || 0}</h2>
-        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
+        <div className="sub">
+          CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}
+        </div>
 
         {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
 
-        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+        <button
+          className="btn primary"
+          onClick={payWithCrypto}
+          disabled={loading || isBadItemId}
+        >
           {loading ? "Создаю счёт..." : "Оплатить криптой"}
         </button>
 
@@ -164,7 +214,11 @@ export default function CheckoutClient() {
             Открыть оплату ещё раз
           </button>
 
-          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
+          <button
+            className="btn"
+            onClick={() => checkPaymentOnce()}
+            disabled={!invoiceId || checking}
+          >
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
         </div>
@@ -173,7 +227,7 @@ export default function CheckoutClient() {
         {statusText && <div className="status">{statusText}</div>}
 
         <div className="hint">
-          Оплата открывается внутри Telegram. После оплаты вернись назад — статус подтянется автоматически.
+          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется автоматически.
         </div>
       </div>
 
@@ -185,7 +239,8 @@ export default function CheckoutClient() {
           justify-content: center;
           padding: 22px 14px;
           color: #eaf0ff;
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
+            sans-serif;
         }
         .card {
           width: 100%;
