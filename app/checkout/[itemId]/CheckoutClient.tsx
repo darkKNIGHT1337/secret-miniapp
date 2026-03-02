@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-type PayStatus = "" | "active" | "paid" | "expired" | "cancelled" | "unknown" | string;
+type PayStatus =
+  | ""
+  | "active"
+  | "paid"
+  | "expired"
+  | "cancelled"
+  | "unknown"
+  | string;
 
 export default function CheckoutClient() {
   const params = useParams<{ itemId?: string }>();
@@ -18,7 +25,10 @@ export default function CheckoutClient() {
   const [payStatus, setPayStatus] = useState<PayStatus>("");
 
   const lastCheckRef = useRef(0);
-  const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
+  const isBadItemId = useMemo(
+    () => !Number.isFinite(itemId) || itemId <= 0,
+    [itemId]
+  );
 
   // Надёжное открытие ссылки в Telegram WebApp (и fallback)
   function openPayLink(url: string) {
@@ -30,23 +40,22 @@ export default function CheckoutClient() {
     // @ts-ignore
     const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
 
-    // Если Telegram WebApp доступен — используем его (window.open часто блокируется)
+    const isTelegramLink = /(^https?:\/\/)?t\.me\//i.test(url);
+
+    // ✅ КЛЮЧЕВО: для t.me сначала openTelegramLink (чтобы не улетать в Safari)
     if (tg) {
       try {
+        if (isTelegramLink && typeof tg.openTelegramLink === "function") {
+          // Telegram часто хочет ссылку без https://
+          const cleaned = url.replace(/^https?:\/\//i, "");
+          tg.openTelegramLink(cleaned);
+          return;
+        }
+
+        // Для обычных https — openLink
         if (typeof tg.openLink === "function") {
           tg.openLink(url, { try_instant_view: false });
           return;
-        }
-        if (typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
-          // на всякий случай пробуем оба формата
-          try {
-            tg.openTelegramLink(url);
-            return;
-          } catch {
-            const cleaned = url.replace(/^https?:\/\//i, "");
-            tg.openTelegramLink(cleaned);
-            return;
-          }
         }
       } catch (e) {
         // упадём в fallback ниже
@@ -56,7 +65,9 @@ export default function CheckoutClient() {
     // Fallback вне Telegram (или если Telegram API недоступен)
     const w = window.open(url, "_blank");
     if (!w) {
-      alert("Браузер/Telegram заблокировал открытие ссылки. Нужен Telegram.WebApp.openLink.");
+      alert(
+        "Браузер/Telegram заблокировал открытие ссылки. Открой вручную: " + url
+      );
     }
   }
 
@@ -122,7 +133,6 @@ export default function CheckoutClient() {
       setPayStatus(data.status || "active");
 
       // ✅ Как раньше: сразу пытаемся открыть оплату
-      // Если Telegram/браузер заблокирует — у тебя останется кнопка "Открыть оплату"
       openPayLink(data.pay_url);
     } finally {
       setLoading(false);
@@ -152,20 +162,34 @@ export default function CheckoutClient() {
     <div className="wrap">
       <div className="card">
         <h2 className="title">Оплата товара #{itemId || 0}</h2>
-        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
+        <div className="sub">
+          CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}
+        </div>
 
         {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
 
-        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
+        <button
+          className="btn primary"
+          onClick={payWithCrypto}
+          disabled={loading || isBadItemId}
+        >
           {loading ? "Создаю счёт..." : "Оплатить криптой"}
         </button>
 
         <div className="row">
-          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
+          <button
+            className="btn"
+            onClick={() => openPayLink(payUrl)}
+            disabled={!payUrl}
+          >
             Открыть оплату ещё раз
           </button>
 
-          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
+          <button
+            className="btn"
+            onClick={() => checkPaymentOnce()}
+            disabled={!invoiceId || checking}
+          >
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
         </div>
@@ -174,7 +198,8 @@ export default function CheckoutClient() {
         {statusText && <div className="status">{statusText}</div>}
 
         <div className="hint">
-          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется автоматически.
+          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется
+          автоматически.
         </div>
       </div>
 
@@ -186,7 +211,8 @@ export default function CheckoutClient() {
           justify-content: center;
           padding: 22px 14px;
           color: #eaf0ff;
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
+            sans-serif;
         }
         .card {
           width: 100%;
