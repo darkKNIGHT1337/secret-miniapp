@@ -11,80 +11,53 @@ export default function CheckoutClient() {
   const itemId = Number(params?.itemId ?? 0);
 
   const [invoiceId, setInvoiceId] = useState<number | null>(null);
-  const [payUrl, setPayUrl] = useState("");
-  const [webPayUrl, setWebPayUrl] = useState("");
-  const [botPayUrl, setBotPayUrl] = useState("");
-  const [kind, setKind] = useState("");
-
+  const [payUrl, setPayUrl] = useState<string>("");
+  const [urlKind, setUrlKind] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
 
-  const [debug, setDebug] = useState<string>("debug: init");
   const lastCheckRef = useRef(0);
-
   const isBadItemId = useMemo(() => !Number.isFinite(itemId) || itemId <= 0, [itemId]);
 
-  function getTg() {
-    // @ts-ignore
-    return typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
-  }
-
-  async function copyText(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      alert("Ссылка скопирована ✅");
-    } catch {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      alert("Ссылка скопирована ✅");
-    }
-  }
-
-  // ✅ ЖЁСТКОЕ ОТКРЫТИЕ (3 способа)
-  function openHard(url: string) {
+  // Надёжное открытие ссылки в Telegram WebApp (и fallback)
+  function openPayLink(url: string) {
     if (!url) {
-      alert("Ссылка пустая.");
+      alert("pay_url пустой — счёт создался без ссылки (это не норма).");
       return;
     }
 
-    const tg = getTg();
-    const isTgLink = /(^https?:\/\/)?t\.me\//i.test(url);
+    // @ts-ignore
+    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
 
-    setDebug(`openHard: tg=${tg ? "YES" : "NO"} isTgLink=${isTgLink ? "YES" : "NO"} url=${url.slice(0, 40)}...`);
-
-    // 1) Telegram link -> openTelegramLink
-    if (tg && isTgLink && typeof tg.openTelegramLink === "function") {
+    // Если Telegram WebApp доступен — используем его (window.open часто блокируется)
+    if (tg) {
       try {
-        const cleaned = url.replace(/^https?:\/\//i, "");
-        tg.openTelegramLink(cleaned);
-        return;
-      } catch {}
+        if (typeof tg.openLink === "function") {
+          tg.openLink(url, { try_instant_view: false });
+          return;
+        }
+        if (typeof tg.openTelegramLink === "function" && /(^https?:\/\/)?t\.me\//i.test(url)) {
+          // на всякий случай пробуем оба формата
+          try {
+            tg.openTelegramLink(url);
+            return;
+          } catch {
+            const cleaned = url.replace(/^https?:\/\//i, "");
+            tg.openTelegramLink(cleaned);
+            return;
+          }
+        }
+      } catch (e) {
+        // упадём в fallback ниже
+      }
     }
 
-    // 2) openLink
-    if (tg && typeof tg.openLink === "function") {
-      try {
-        tg.openLink(url, { try_instant_view: false });
-        return;
-      } catch {}
-    }
-
-    // 3) HARD fallback — навигация в этом же WebView
-    // Это часто работает, когда API “молчит”
-    try {
-      window.location.href = url;
-      return;
-    } catch {}
-
-    // 4) последний шанс
+    // Fallback вне Telegram (или если Telegram API недоступен)
     const w = window.open(url, "_blank");
-    if (!w) alert("Telegram/браузер заблокировал открытие. Скопируй ссылку вручную.");
+    if (!w) {
+      alert("Браузер/Telegram заблокировал открытие ссылки. Нужен Telegram.WebApp.openLink.");
+    }
   }
 
   async function checkPaymentOnce(id?: number | null) {
@@ -124,11 +97,13 @@ export default function CheckoutClient() {
     try {
       setLoading(true);
 
+      const amount = "1"; // TODO цена по itemId
+
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: "1",
+          amount,
           description: `Оплата товара #${itemId}`,
           payload: `item_${itemId}_${Date.now()}`,
         }),
@@ -142,26 +117,20 @@ export default function CheckoutClient() {
       }
 
       setInvoiceId(data.invoice_id);
+      setPayUrl(data.pay_url);
+      setUrlKind(data.kind || "");
       setPayStatus(data.status || "active");
 
-      setPayUrl(data.pay_url || "");
-      setWebPayUrl(data.web_pay_url || "");
-      setBotPayUrl(data.bot_pay_url || "");
-      setKind(data.kind || "");
-
-      // ✅ пробуем открыть сразу
-      openHard(data.pay_url);
+      // ✅ Как раньше: сразу пытаемся открыть оплату
+      // Если Telegram/браузер заблокирует — у тебя останется кнопка "Открыть оплату"
+      openPayLink(data.pay_url);
     } finally {
       setLoading(false);
     }
   }
 
+  // авто-проверка при возвращении
   useEffect(() => {
-    const tg = getTg();
-    setDebug(
-      `debug: tg=${tg ? "YES" : "NO"} openLink=${tg?.openLink ? "YES" : "NO"} openTelegramLink=${tg?.openTelegramLink ? "YES" : "NO"}`
-    );
-
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
         checkPaymentOnce(invoiceId);
@@ -179,129 +148,117 @@ export default function CheckoutClient() {
   else if (payStatus === "unknown") statusText = "Статус неизвестен";
   else if (payStatus) statusText = `Статус: ${payStatus}`;
 
-  const shownUrl = payUrl || webPayUrl || botPayUrl;
-
   return (
-    <div style={{ minHeight: "100vh", background: "#0b0f14", padding: 16, color: "#eaf0ff" }}>
-      <div
-        style={{
-          maxWidth: 560,
-          margin: "0 auto",
-          background: "#111826",
-          borderRadius: 16,
-          padding: 16,
-          border: "1px solid rgba(255,255,255,0.08)",
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Оплата товара #{itemId || 0}</h2>
-        <div style={{ opacity: 0.65, fontSize: 12, marginTop: 6 }}>BUILD TEST v2 · kind={kind || "—"}</div>
-        <div style={{ opacity: 0.6, fontSize: 12, marginTop: 8 }}>{debug}</div>
+    <div className="wrap">
+      <div className="card">
+        <h2 className="title">Оплата товара #{itemId || 0}</h2>
+        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
 
-        <button
-          onClick={payWithCrypto}
-          disabled={loading || isBadItemId}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid rgba(124,255,178,0.25)",
-            background: "rgba(124,255,178,0.14)",
-            color: "#eaf0ff",
-            fontWeight: 800,
-          }}
-        >
+        {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
+
+        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
           {loading ? "Создаю счёт..." : "Оплатить криптой"}
         </button>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-          <button
-            onClick={() => openHard(payUrl)}
-            disabled={!payUrl}
-            style={{
-              flex: "1 1 240px",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#eaf0ff",
-            }}
-          >
+        <div className="row">
+          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
             Открыть оплату ещё раз
           </button>
 
-          <button
-            onClick={() => openHard(webPayUrl)}
-            disabled={!webPayUrl}
-            style={{
-              flex: "1 1 240px",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#eaf0ff",
-            }}
-          >
-            Открыть web-оплату
-          </button>
-
-          <button
-            onClick={() => openHard(botPayUrl)}
-            disabled={!botPayUrl}
-            style={{
-              flex: "1 1 240px",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(31,111,255,0.28)",
-              background: "rgba(31,111,255,0.14)",
-              color: "#eaf0ff",
-              fontWeight: 800,
-            }}
-          >
-            Открыть в CryptoBot (t.me)
-          </button>
-
-          <button
-            onClick={() => checkPaymentOnce()}
-            disabled={!invoiceId || checking}
-            style={{
-              flex: "1 1 240px",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#eaf0ff",
-            }}
-          >
+          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
             {checking ? "Проверяю..." : "Проверить оплату"}
           </button>
         </div>
 
-        {shownUrl && (
-          <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Ссылка (если ничего не открывается — скопируй):</div>
-            <div style={{ marginTop: 6, fontSize: 12, wordBreak: "break-all" }}>{shownUrl}</div>
-            <button
-              onClick={() => copyText(shownUrl)}
-              style={{
-                marginTop: 10,
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#eaf0ff",
-                cursor: "pointer",
-              }}
-            >
-              Скопировать ссылку
-            </button>
-          </div>
-        )}
+        {invoiceId && <div className="meta">Invoice ID: {invoiceId}</div>}
+        {statusText && <div className="status">{statusText}</div>}
 
-        {invoiceId && <div style={{ marginTop: 12, opacity: 0.75, fontSize: 13 }}>Invoice ID: {invoiceId}</div>}
-        {statusText && <div style={{ marginTop: 8, fontWeight: 900 }}>{statusText}</div>}
+        <div className="hint">
+          Если Telegram переключит тебя на оплату — вернись назад, статус подтянется автоматически.
+        </div>
       </div>
+
+      <style jsx>{`
+        .wrap {
+          min-height: 100vh;
+          background: #0b0f14;
+          display: flex;
+          justify-content: center;
+          padding: 22px 14px;
+          color: #eaf0ff;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        }
+        .card {
+          width: 100%;
+          max-width: 520px;
+          background: #111826;
+          border: 1px solid rgba(234, 240, 255, 0.12);
+          border-radius: 18px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+        }
+        .title {
+          margin: 0;
+          font-size: 20px;
+        }
+        .sub {
+          margin-top: 6px;
+          font-size: 13px;
+          color: rgba(234, 240, 255, 0.7);
+        }
+        .alert {
+          margin-top: 12px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 107, 107, 0.25);
+          background: rgba(255, 107, 107, 0.1);
+          color: #ff6b6b;
+          font-weight: 700;
+        }
+        .btn {
+          padding: 12px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(234, 240, 255, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: #eaf0ff;
+          cursor: pointer;
+          width: 100%;
+        }
+        .btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .primary {
+          background: rgba(124, 255, 178, 0.14);
+          border-color: rgba(124, 255, 178, 0.25);
+          font-weight: 800;
+        }
+        .row {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 10px;
+        }
+        .row .btn {
+          width: auto;
+          flex: 1 1 200px;
+        }
+        .meta {
+          margin-top: 12px;
+          font-size: 13px;
+          opacity: 0.75;
+        }
+        .status {
+          margin-top: 8px;
+          font-weight: 900;
+        }
+        .hint {
+          margin-top: 12px;
+          font-size: 13px;
+          opacity: 0.75;
+          line-height: 1.4;
+        }
+      `}</style>
     </div>
   );
 }
