@@ -22,6 +22,21 @@ type SavedCheckout = {
   createdAt: number;
 };
 
+function formatTime(ts: number) {
+  try {
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  } catch {
+    return "";
+  }
+}
+
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
+
 export default function CheckoutClient() {
   const params = useParams<{ itemId?: string }>();
   const router = useRouter();
@@ -33,6 +48,7 @@ export default function CheckoutClient() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [payStatus, setPayStatus] = useState<PayStatus>("");
+  const [nowTick, setNowTick] = useState(Date.now());
 
   const lastCheckRef = useRef(0);
   const restoredRef = useRef(false);
@@ -72,10 +88,7 @@ export default function CheckoutClient() {
 
   // Надёжное открытие ссылки в Telegram WebApp (и fallback)
   function openPayLink(url: string) {
-    if (!url) {
-      alert("pay_url пустой — счёт создался без ссылки (это не норма).");
-      return;
-    }
+    if (!url) return;
 
     // @ts-ignore
     const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
@@ -85,30 +98,22 @@ export default function CheckoutClient() {
 
     if (tg) {
       try {
-        // ✅ 1) https (pay.crypt.bot) — открываем как webview/оверлей (mini app чаще остаётся)
         if (isHttp && typeof tg.openLink === "function") {
           tg.openLink(url, { try_instant_view: false });
           return;
         }
-
-        // ✅ 2) t.me — откроет чат/бот (может выглядеть как “закрытие”)
         if (isTelegramLink && typeof tg.openTelegramLink === "function") {
           const cleaned = url.replace(/^https?:\/\//i, "");
           tg.openTelegramLink(cleaned);
           return;
         }
-
-        // ✅ 3) fallback внутри Telegram
         if (typeof tg.openLink === "function") {
           tg.openLink(url, { try_instant_view: false });
           return;
         }
-      } catch {
-        // упадём ниже
-      }
+      } catch {}
     }
 
-    // Fallback вне Telegram
     window.location.href = url;
   }
 
@@ -132,24 +137,18 @@ export default function CheckoutClient() {
 
       if (!res.ok) {
         setPayStatus("unknown");
-        // сохраняем, что статус неизвестен — чтобы при перезапуске не терялось
         const saved = safeGetSaved();
-        if (saved) {
-          safeSetSaved({ ...saved, status: "unknown" });
-        }
-        alert(data?.error || "Ошибка проверки оплаты");
+        if (saved) safeSetSaved({ ...saved, status: "unknown" });
         return;
       }
 
       const status = (data?.status || "unknown") as PayStatus;
       setPayStatus(status);
 
-      // сохраняем новый статус
       const saved = safeGetSaved();
       if (saved) safeSetSaved({ ...saved, status });
 
       if (status === "paid") {
-        // чистим сохранение и пускаем дальше
         safeClearSaved();
         router.push(`/access/${itemId}`);
       }
@@ -191,7 +190,6 @@ export default function CheckoutClient() {
       setUrlKind(newKind);
       setPayStatus(newStatus);
 
-      // ✅ ЖЕЛЕЗНО сохраняем в localStorage
       safeSetSaved({
         v: 1,
         itemId,
@@ -202,14 +200,13 @@ export default function CheckoutClient() {
         createdAt: Date.now(),
       });
 
-      // ✅ Как раньше: сразу пытаемся открыть оплату
       openPayLink(newPayUrl);
     } finally {
       setLoading(false);
     }
   }
 
-  // ✅ Восстановление состояния при старте (если Telegram/OS выгрузил mini app)
+  // Восстановление состояния при старте
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (restoredRef.current) return;
@@ -222,8 +219,6 @@ export default function CheckoutClient() {
     setPayUrl(saved.payUrl || "");
     setUrlKind(saved.kind || "");
     setPayStatus(saved.status || "active");
-
-    // сразу попробуем подтянуть актуальный статус
     checkPaymentOnce(saved.invoiceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
@@ -239,123 +234,665 @@ export default function CheckoutClient() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [invoiceId]);
 
-  let statusText = "";
-  if (payStatus === "paid") statusText = "Оплачено ✅";
-  else if (payStatus === "active") statusText = "Ожидает оплаты…";
-  else if (payStatus === "expired") statusText = "Счёт истёк";
-  else if (payStatus === "cancelled") statusText = "Отменено";
-  else if (payStatus === "unknown") statusText = "Статус неизвестен";
-  else if (payStatus) statusText = `Статус: ${payStatus}`;
+  // тикер времени (для “операционного” ощущения)
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const saved = typeof window !== "undefined" ? safeGetSaved() : null;
+  const createdAt = saved?.createdAt ?? (invoiceId ? Date.now() : 0);
+  const ageSec = createdAt ? Math.floor((nowTick - createdAt) / 1000) : 0;
+  const ageMin = Math.floor(ageSec / 60);
+  const ageSecRem = ageSec % 60;
+
+  // если expires_in = 3600
+  const ttl = 3600;
+  const progress = createdAt ? clamp(ageSec / ttl, 0, 1) : 0;
+
+  const statusLabel =
+    payStatus === "paid"
+      ? "Подтверждено"
+      : payStatus === "active"
+      ? "Ожидание подтверждения"
+      : payStatus === "expired"
+      ? "Сессия истекла"
+      : payStatus === "cancelled"
+      ? "Отменено"
+      : payStatus === "unknown"
+      ? "Требуется проверка"
+      : payStatus
+      ? `Статус: ${payStatus}`
+      : "Готово к созданию счета";
+
+  const badgeKind =
+    payStatus === "paid"
+      ? "ok"
+      : payStatus === "active"
+      ? "wait"
+      : payStatus === "expired" || payStatus === "cancelled"
+      ? "bad"
+      : payStatus === "unknown"
+      ? "warn"
+      : "idle";
+
+  const step1Done = !!invoiceId;
+  const step2Done = !!payUrl;
+  const step3Done = payStatus === "paid";
+
+  const primaryText = !invoiceId
+    ? "Инициализировать оплату"
+    : payStatus === "active"
+    ? "Открыть защищенную оплату"
+    : payStatus === "paid"
+    ? "Перейти к доступу"
+    : "Открыть оплату";
+
+  const primaryAction = () => {
+    if (isBadItemId) return;
+    if (!invoiceId) return payWithCrypto();
+    if (payStatus === "paid") return router.push(`/access/${itemId}`);
+    if (payUrl) return openPayLink(payUrl);
+    return payWithCrypto();
+  };
 
   return (
     <div className="wrap">
-      <div className="card">
-        <h2 className="title">Оплата товара #{itemId || 0}</h2>
-        <div className="sub">CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}</div>
-
-        {isBadItemId && <div className="alert">Открой так: /checkout/1</div>}
-
-        <button className="btn primary" onClick={payWithCrypto} disabled={loading || isBadItemId}>
-          {loading ? "Создаю счёт..." : invoiceId ? "Создать новый счёт" : "Оплатить криптой"}
-        </button>
-
-        <div className="row">
-          <button className="btn" onClick={() => openPayLink(payUrl)} disabled={!payUrl}>
-            Открыть оплату
-          </button>
-
-          <button className="btn" onClick={() => checkPaymentOnce()} disabled={!invoiceId || checking}>
-            {checking ? "Проверяю..." : "Проверить оплату"}
-          </button>
+      <div className="bg" aria-hidden />
+      <div className="shell">
+        <div className="topbar">
+          <div className="brand">
+            <div className="logo" aria-hidden />
+            <div className="brandText">
+              <div className="appName">SECURE CHECKOUT</div>
+              <div className="appSub">Операция оплаты • Товар #{itemId || 0}</div>
+            </div>
+          </div>
+          <div className={`badge ${badgeKind}`}>
+            <span className="dot" aria-hidden />
+            <span>{statusLabel}</span>
+          </div>
         </div>
 
-        {invoiceId && <div className="meta">Invoice ID: {invoiceId}</div>}
-        {statusText && <div className="status">{statusText}</div>}
+        <div className="grid">
+          <div className="panel main">
+            <div className="cardHeader">
+              <div>
+                <div className="h1">Транзакция</div>
+                <div className="muted">
+                  Канал: CryptoBot · USDT {urlKind ? `· ${urlKind}` : ""}
+                </div>
+              </div>
 
-        <div className="hint">
-          Даже если Telegram “закроет” мини-апп при оплате — при возвращении сюда счёт восстановится и статус обновится автоматически.
+              <div className="kv">
+                <div className="k">Сессия</div>
+                <div className="v">
+                  {invoiceId ? (
+                    <>
+                      #{invoiceId}{" "}
+                      <span className="sep">•</span>{" "}
+                      {createdAt ? `создано ${formatTime(createdAt)}` : ""}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {isBadItemId && (
+              <div className="alert">
+                Неверный itemId. Открой, например: <b>/checkout/1</b>
+              </div>
+            )}
+
+            <div className="timeline">
+              <div className={`step ${step1Done ? "done" : "todo"}`}>
+                <div className="sIcon" />
+                <div className="sText">
+                  <div className="sTitle">Шаг 1 — Создание счета</div>
+                  <div className="sDesc">
+                    Формируем инвойс и фиксируем сессию, чтобы ничего не сбросилось.
+                  </div>
+                </div>
+              </div>
+
+              <div className={`step ${step2Done ? "done" : "todo"}`}>
+                <div className="sIcon" />
+                <div className="sText">
+                  <div className="sTitle">Шаг 2 — Безопасная оплата</div>
+                  <div className="sDesc">
+                    Оплата открывается внутри Telegram. После оплаты вернись назад.
+                  </div>
+                </div>
+              </div>
+
+              <div className={`step ${step3Done ? "done" : "todo"}`}>
+                <div className="sIcon" />
+                <div className="sText">
+                  <div className="sTitle">Шаг 3 — Подтверждение</div>
+                  <div className="sDesc">
+                    Мы автоматически проверим статус при возврате и после перезапуска.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="actions">
+              <button
+                className={`btn primary ${loading ? "busy" : ""}`}
+                onClick={primaryAction}
+                disabled={loading || checking || isBadItemId}
+              >
+                <span className="btnGlow" aria-hidden />
+                <span className="btnText">
+                  {loading ? "Инициализация..." : checking ? "Проверка..." : primaryText}
+                </span>
+              </button>
+
+              <div className="row">
+                <button
+                  className="btn ghost"
+                  onClick={() => payUrl && openPayLink(payUrl)}
+                  disabled={!payUrl || loading}
+                >
+                  Открыть оплату
+                </button>
+
+                <button
+                  className="btn ghost"
+                  onClick={() => checkPaymentOnce()}
+                  disabled={!invoiceId || checking}
+                >
+                  {checking ? "Проверяю..." : "Проверить статус"}
+                </button>
+              </div>
+            </div>
+
+            <div className="footer">
+              <div className="meter">
+                <div className="meterTop">
+                  <div className="mTitle">Окно операции</div>
+                  <div className="mValue">
+                    {invoiceId ? (
+                      <>
+                        {String(ageMin).padStart(2, "0")}:
+                        {String(ageSecRem).padStart(2, "0")}{" "}
+                        <span className="muted">/ 60:00</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                </div>
+                <div className="meterBar">
+                  <div
+                    className="meterFill"
+                    style={{ width: `${Math.round(progress * 100)}%` }}
+                  />
+                </div>
+                <div className="meterHint">
+                  Состояние сохраняется локально. Даже если Telegram “закроет” мини-апп —
+                  при возврате инвойс восстановится и статус обновится автоматически.
+                </div>
+              </div>
+
+              <div className="metaLine">
+                <div className="metaItem">
+                  <div className="metaK">Защита</div>
+                  <div className="metaV">state persistence • auto recheck</div>
+                </div>
+                <div className="metaItem">
+                  <div className="metaK">Маршрут</div>
+                  <div className="metaV">/checkout/{itemId || 0}</div>
+                </div>
+                <div className="metaItem">
+                  <div className="metaK">Цель</div>
+                  <div className="metaV">/access/{itemId || 0}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel side">
+            <div className="sideCard">
+              <div className="sideTitle">Протокол</div>
+              <div className="log">
+                <div className="logRow">
+                  <span className="t">•</span>
+                  <span>Сохранение состояния включено (localStorage).</span>
+                </div>
+                <div className="logRow">
+                  <span className="t">•</span>
+                  <span>
+                    При возврате в приложение: авто-проверка статуса.
+                  </span>
+                </div>
+                <div className="logRow">
+                  <span className="t">•</span>
+                  <span>
+                    Если устройство выгрузило WebView — восстановим инвойс и продолжим.
+                  </span>
+                </div>
+              </div>
+
+              <div className="divider" />
+
+              <div className="sideTitle">Подсказка</div>
+              <div className="tip">
+                Оплатил? Вернись назад и подожди 1–2 секунды. Если надо —
+                нажми «Проверить статус».
+              </div>
+
+              <div className="divider" />
+
+              <div className="mini">
+                <div className="miniK">Invoice</div>
+                <div className="miniV">{invoiceId ? `#${invoiceId}` : "—"}</div>
+                <div className="miniK">Status</div>
+                <div className="miniV">{payStatus || "—"}</div>
+                <div className="miniK">URL</div>
+                <div className="miniV">{payUrl ? "готово" : "—"}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <style jsx>{`
         .wrap {
           min-height: 100vh;
-          background: #0b0f14;
-          display: flex;
-          justify-content: center;
-          padding: 22px 14px;
           color: #eaf0ff;
           font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          background: #070a0f;
+          position: relative;
+          overflow: hidden;
         }
-        .card {
-          width: 100%;
-          max-width: 520px;
-          background: #111826;
-          border: 1px solid rgba(234, 240, 255, 0.12);
-          border-radius: 18px;
-          padding: 16px;
-          box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+        .bg {
+          position: absolute;
+          inset: -120px;
+          background:
+            radial-gradient(800px 500px at 15% 20%, rgba(124, 255, 178, 0.10), transparent 60%),
+            radial-gradient(700px 520px at 80% 35%, rgba(120, 162, 255, 0.12), transparent 62%),
+            radial-gradient(900px 700px at 50% 90%, rgba(255, 110, 110, 0.06), transparent 60%),
+            linear-gradient(180deg, rgba(255,255,255,0.03), transparent 35%),
+            radial-gradient(1200px 800px at 40% 40%, rgba(255,255,255,0.03), transparent 55%);
+          filter: blur(0px);
+          pointer-events: none;
         }
-        .title {
-          margin: 0;
-          font-size: 20px;
+        .shell {
+          position: relative;
+          max-width: 1040px;
+          margin: 0 auto;
+          padding: 18px 14px 28px;
         }
-        .sub {
-          margin-top: 6px;
-          font-size: 13px;
-          color: rgba(234, 240, 255, 0.7);
+        .topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
         }
-        .alert {
-          margin-top: 12px;
+        .brand {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+        .logo {
+          width: 36px;
+          height: 36px;
+          border-radius: 12px;
+          background:
+            radial-gradient(10px 10px at 30% 30%, rgba(255,255,255,0.9), transparent 55%),
+            linear-gradient(135deg, rgba(124,255,178,0.55), rgba(120,162,255,0.45));
+          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+          border: 1px solid rgba(255,255,255,0.16);
+        }
+        .brandText .appName {
+          font-weight: 900;
+          letter-spacing: 0.14em;
+          font-size: 12px;
+          opacity: 0.92;
+        }
+        .brandText .appSub {
+          font-size: 12px;
+          opacity: 0.68;
+          margin-top: 2px;
+        }
+
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
           padding: 10px 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(255, 107, 107, 0.25);
-          background: rgba(255, 107, 107, 0.1);
-          color: #ff6b6b;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(255,255,255,0.06);
+          backdrop-filter: blur(10px);
+          font-size: 12px;
+          opacity: 0.92;
+          box-shadow: 0 16px 42px rgba(0,0,0,0.35);
+        }
+        .badge .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          box-shadow: 0 0 0 4px rgba(255,255,255,0.05);
+        }
+        .badge.idle .dot { background: rgba(120,162,255,0.9); }
+        .badge.wait .dot { background: rgba(255,215,115,0.95); }
+        .badge.ok .dot { background: rgba(124,255,178,0.95); }
+        .badge.bad .dot { background: rgba(255,110,110,0.95); }
+        .badge.warn .dot { background: rgba(255,215,115,0.95); }
+
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        @media (min-width: 920px) {
+          .grid { grid-template-columns: 1.35fr 0.65fr; }
+        }
+
+        .panel {
+          border-radius: 20px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(17, 24, 38, 0.66);
+          backdrop-filter: blur(14px);
+          box-shadow: 0 30px 90px rgba(0,0,0,0.55);
+          overflow: hidden;
+        }
+        .panel.main {
+          padding: 16px;
+        }
+        .panel.side {
+          padding: 12px;
+        }
+
+        .cardHeader {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .h1 {
+          font-size: 18px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+        }
+        .muted {
+          font-size: 12px;
+          opacity: 0.7;
+          margin-top: 4px;
+        }
+        .kv {
+          text-align: right;
+        }
+        .k {
+          font-size: 11px;
+          opacity: 0.68;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .v {
+          font-size: 12px;
+          opacity: 0.92;
+          margin-top: 4px;
+        }
+        .sep { opacity: 0.35; padding: 0 6px; }
+
+        .alert {
+          margin: 12px 0 0;
+          padding: 12px 12px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 110, 110, 0.22);
+          background: rgba(255, 110, 110, 0.08);
+          color: rgba(255, 180, 180, 0.95);
           font-weight: 700;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+
+        .timeline {
+          margin-top: 14px;
+          display: grid;
+          gap: 10px;
+        }
+        .step {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          padding: 12px;
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(255,255,255,0.04);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+          transform: translateZ(0);
+          transition: transform 200ms ease, border-color 200ms ease, background 200ms ease;
+        }
+        .step:hover {
+          transform: translateY(-1px);
+          border-color: rgba(255,255,255,0.16);
+          background: rgba(255,255,255,0.05);
+        }
+        .sIcon {
+          width: 12px;
+          height: 12px;
+          border-radius: 999px;
+          margin-top: 4px;
+          box-shadow: 0 0 0 4px rgba(255,255,255,0.04);
+        }
+        .step.todo .sIcon { background: rgba(120,162,255,0.9); }
+        .step.done .sIcon { background: rgba(124,255,178,0.95); }
+        .sTitle {
+          font-weight: 900;
+          font-size: 13px;
+        }
+        .sDesc {
+          margin-top: 4px;
+          font-size: 12px;
+          opacity: 0.75;
+          line-height: 1.35;
+        }
+
+        .actions {
+          margin-top: 14px;
+          display: grid;
+          gap: 10px;
         }
         .btn {
-          padding: 12px 14px;
-          border-radius: 12px;
-          border: 1px solid rgba(234, 240, 255, 0.14);
-          background: rgba(255, 255, 255, 0.06);
+          position: relative;
+          border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(255,255,255,0.06);
           color: #eaf0ff;
+          padding: 14px 14px;
           cursor: pointer;
-          width: 100%;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+          transition: transform 120ms ease, background 160ms ease, border-color 160ms ease;
+          overflow: hidden;
+          user-select: none;
         }
         .btn:disabled {
           opacity: 0.55;
           cursor: not-allowed;
+          transform: none !important;
         }
-        .primary {
-          background: rgba(124, 255, 178, 0.14);
-          border-color: rgba(124, 255, 178, 0.25);
+        .btn:active { transform: scale(0.99); }
+        .btn.primary {
+          border-color: rgba(124,255,178,0.22);
+          background: linear-gradient(135deg, rgba(124,255,178,0.22), rgba(120,162,255,0.14));
+          box-shadow: 0 18px 70px rgba(0,0,0,0.45);
+        }
+        .btn.primary:hover {
+          border-color: rgba(124,255,178,0.30);
+          background: linear-gradient(135deg, rgba(124,255,178,0.26), rgba(120,162,255,0.18));
+        }
+        .btn.ghost {
           font-weight: 800;
+          background: rgba(255,255,255,0.04);
         }
         .row {
-          display: flex;
+          display: grid;
+          grid-template-columns: 1fr;
           gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 10px;
         }
-        .row .btn {
-          width: auto;
-          flex: 1 1 200px;
+        @media (min-width: 520px) {
+          .row { grid-template-columns: 1fr 1fr; }
         }
-        .meta {
-          margin-top: 12px;
-          font-size: 13px;
-          opacity: 0.75;
+        .btnGlow {
+          position: absolute;
+          inset: -40px;
+          background: radial-gradient(240px 120px at 30% 40%, rgba(255,255,255,0.22), transparent 60%);
+          opacity: 0.55;
+          filter: blur(0px);
+          pointer-events: none;
+          transform: translate3d(0,0,0);
+          animation: glow 2.6s ease-in-out infinite;
         }
-        .status {
-          margin-top: 8px;
+        @keyframes glow {
+          0%, 100% { transform: translateX(-6px); opacity: 0.52; }
+          50% { transform: translateX(6px); opacity: 0.62; }
+        }
+        .btnText { position: relative; z-index: 1; }
+
+        .footer {
+          margin-top: 14px;
+          display: grid;
+          gap: 12px;
+        }
+        .meter {
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(255,255,255,0.04);
+          padding: 12px;
+        }
+        .meterTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .mTitle {
+          font-size: 12px;
           font-weight: 900;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          opacity: 0.85;
         }
-        .hint {
-          margin-top: 12px;
-          font-size: 13px;
-          opacity: 0.75;
-          line-height: 1.4;
+        .mValue {
+          font-variant-numeric: tabular-nums;
+          font-weight: 900;
+          opacity: 0.95;
+        }
+        .meterBar {
+          margin-top: 10px;
+          height: 10px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.10);
+          overflow: hidden;
+        }
+        .meterFill {
+          height: 100%;
+          border-radius: 999px;
+          background: linear-gradient(90deg, rgba(124,255,178,0.85), rgba(120,162,255,0.75));
+          box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+          transition: width 250ms ease;
+        }
+        .meterHint {
+          margin-top: 10px;
+          font-size: 12px;
+          opacity: 0.74;
+          line-height: 1.35;
+        }
+
+        .metaLine {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        @media (min-width: 720px) {
+          .metaLine { grid-template-columns: 1fr 1fr 1fr; }
+        }
+        .metaItem {
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(255,255,255,0.03);
+          padding: 12px;
+        }
+        .metaK {
+          font-size: 11px;
+          opacity: 0.68;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .metaV {
+          margin-top: 6px;
+          font-size: 12px;
+          opacity: 0.9;
+          font-weight: 800;
+        }
+
+        .sideCard {
+          border-radius: 18px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(255,255,255,0.03);
+          padding: 12px;
+        }
+        .sideTitle {
+          font-size: 12px;
+          font-weight: 900;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          opacity: 0.85;
+          margin-bottom: 10px;
+        }
+        .log {
+          display: grid;
+          gap: 8px;
+          font-size: 12px;
+          opacity: 0.78;
+          line-height: 1.35;
+        }
+        .logRow {
+          display: flex;
+          gap: 8px;
+          align-items: flex-start;
+        }
+        .t {
+          opacity: 0.6;
+          margin-top: 1px;
+        }
+        .divider {
+          height: 1px;
+          background: rgba(255,255,255,0.08);
+          margin: 12px 0;
+        }
+        .tip {
+          font-size: 12px;
+          opacity: 0.78;
+          line-height: 1.35;
+        }
+        .mini {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px 12px;
+          font-size: 12px;
+          opacity: 0.9;
+        }
+        .miniK {
+          opacity: 0.68;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          font-size: 11px;
+        }
+        .miniV {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          font-weight: 900;
         }
       `}</style>
     </div>
