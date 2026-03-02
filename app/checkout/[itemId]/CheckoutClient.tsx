@@ -42,7 +42,7 @@ export default function CheckoutClient() {
     [itemId]
   );
 
-  const storageKey = `checkout_secure_${itemId}`;
+  const storageKey = `secure_checkout_${itemId}`;
 
   function saveState(data: SavedCheckout) {
     try {
@@ -68,9 +68,10 @@ export default function CheckoutClient() {
     } catch {}
   }
 
-  // Telegram
+  // ===== Telegram =====
+
   function openSupport() {
-    const username = "YOUR_USERNAME";
+    const username = "YOUR_USERNAME"; // ← замени
     const url = `https://t.me/${username}`;
 
     // @ts-ignore
@@ -96,6 +97,8 @@ export default function CheckoutClient() {
     }
   }
 
+  // ===== Проверка оплаты =====
+
   async function checkPaymentOnce(id?: number | null) {
     const targetId = id ?? invoiceId;
     if (!targetId) return;
@@ -115,6 +118,7 @@ export default function CheckoutClient() {
 
       const data = await res.json();
       const status = (data?.status || "unknown") as PayStatus;
+
       setPayStatus(status);
 
       const saved = loadState();
@@ -128,6 +132,8 @@ export default function CheckoutClient() {
       setChecking(false);
     }
   }
+
+  // ===== Создание счета =====
 
   async function payWithCrypto() {
     setLoading(true);
@@ -144,6 +150,7 @@ export default function CheckoutClient() {
       });
 
       const data = await res.json();
+
       if (!res.ok) {
         alert(data?.error || "Ошибка создания счета");
         return;
@@ -170,7 +177,8 @@ export default function CheckoutClient() {
     }
   }
 
-  // восстановление
+  // ===== Восстановление =====
+
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
@@ -186,7 +194,7 @@ export default function CheckoutClient() {
     checkPaymentOnce(saved.invoiceId);
   }, [itemId]);
 
-  // авто-проверка при возврате
+  // Проверка при возврате в приложение
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible" && invoiceId) {
@@ -197,64 +205,78 @@ export default function CheckoutClient() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [invoiceId]);
 
+  // ===== UI =====
+
   return (
     <div className="wrap">
-      <div className="panel">
-        <h2 className="title">Secure Operation</h2>
-        <div className="sub">
-          Checkout · Item #{itemId} · CryptoBot USDT {urlKind && `· ${urlKind}`}
-        </div>
-
-        <button
-          className="btn primary"
-          onClick={payWithCrypto}
-          disabled={loading || isBadItemId}
-        >
-          {loading ? "Создание счета..." : "Инициализировать оплату"}
-        </button>
-
-        <div className="row">
-          <button
-            className="btn"
-            onClick={() => openPayLink(payUrl)}
-            disabled={!payUrl}
-          >
-            Открыть оплату
-          </button>
-
-          <button
-            className="btn"
-            onClick={() => checkPaymentOnce()}
-            disabled={!invoiceId || checking}
-          >
-            {checking ? "Проверка..." : "Проверить статус"}
-          </button>
-        </div>
-
-        {invoiceId && <div className="meta">Session #{invoiceId}</div>}
-
-        {payStatus && (
-          <div className="status">
-            {payStatus === "paid"
-              ? "Операция подтверждена"
-              : payStatus === "active"
-              ? "Ожидание оплаты"
-              : payStatus}
+      <div className="container">
+        <div className="main">
+          <h2 className="title">Secure Operation</h2>
+          <div className="sub">
+            Item #{itemId} · CryptoBot USDT {urlKind && `· ${urlKind}`}
           </div>
-        )}
 
-        <div className="divider" />
+          <button
+            className="btn primary"
+            onClick={payWithCrypto}
+            disabled={loading || isBadItemId}
+          >
+            {loading ? "Создание счета..." : "Инициализировать оплату"}
+          </button>
 
-        <div className="protocol">
-          <div className="pTitle">Протокол</div>
-          <div>• Сессия сохранена</div>
-          <div>• Автоматическая проверка при возврате</div>
-          <div>• Восстановление после закрытия Telegram</div>
+          <div className="row">
+            <button
+              className="btn"
+              onClick={() => openPayLink(payUrl)}
+              disabled={!payUrl}
+            >
+              Открыть оплату
+            </button>
+
+            <button
+              className="btn"
+              onClick={() => checkPaymentOnce()}
+              disabled={!invoiceId || checking}
+            >
+              {checking ? "Проверка..." : "Проверить статус"}
+            </button>
+          </div>
+
+          {invoiceId && (
+            <div className="meta">Session #{invoiceId}</div>
+          )}
+
+          {payStatus && (
+            <div className="status">
+              {payStatus === "paid"
+                ? "Операция подтверждена"
+                : payStatus === "active"
+                ? "Ожидание оплаты"
+                : payStatus}
+            </div>
+          )}
         </div>
 
-        <button className="supportBtn" onClick={openSupport}>
-          Связаться с поддержкой
-        </button>
+        {/* ===== Правая панель ===== */}
+
+        <div className="side">
+          <div className="sideCard">
+            <div className="sideTitle">Протокол</div>
+            <div className="log">
+              <div>• Сессия оплаты сохранена</div>
+              <div>• Автоматическая проверка при возврате</div>
+              <div>• Восстановление после закрытия Telegram</div>
+            </div>
+
+            <div className="divider" />
+
+            <div className="sideTitle">Поддержка</div>
+
+            <button className="supportBtn" onClick={openSupport}>
+              Связаться с поддержкой
+            </button>
+          </div>
+        </div>
       </div>
 
       <style jsx>{`
@@ -269,15 +291,28 @@ export default function CheckoutClient() {
           font-family: system-ui;
         }
 
-        .panel {
+        .container {
           width: 100%;
-          max-width: 520px;
+          max-width: 900px;
+          display: grid;
+          grid-template-columns: 1fr 280px;
+          gap: 16px;
+        }
+
+        .main {
           background: rgba(17, 24, 38, 0.9);
           backdrop-filter: blur(18px);
           border: 1px solid rgba(255,255,255,0.1);
           border-radius: 20px;
           padding: 18px;
           box-shadow: 0 40px 100px rgba(0,0,0,0.7);
+        }
+
+        .sideCard {
+          background: rgba(17, 24, 38, 0.9);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 20px;
+          padding: 16px;
         }
 
         .title {
@@ -325,24 +360,27 @@ export default function CheckoutClient() {
           font-weight: 800;
         }
 
-        .divider {
-          margin: 16px 0;
-          height: 1px;
-          background: rgba(255,255,255,0.1);
+        .sideTitle {
+          font-weight: 800;
+          margin-bottom: 8px;
         }
 
-        .protocol {
+        .log {
           font-size: 13px;
           opacity: 0.8;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
         }
 
-        .pTitle {
-          font-weight: 800;
-          margin-bottom: 6px;
+        .divider {
+          height: 1px;
+          background: rgba(255,255,255,0.1);
+          margin: 12px 0;
         }
 
         .supportBtn {
-          margin-top: 12px;
+          width: 100%;
           padding: 12px;
           border-radius: 12px;
           border: 1px solid rgba(120,162,255,0.4);
