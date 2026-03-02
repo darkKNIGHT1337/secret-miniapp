@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { PRODUCTS } from "@/lib/products";
 
 type PayStatus =
   | ""
@@ -177,14 +178,21 @@ export default function CheckoutClient() {
     try {
       setLoading(true);
 
-      const amount = "1"; // TODO цена по itemId
+      const product = PRODUCTS[itemId];
+
+      if (!product) {
+        alert("Товар не найден");
+        return;
+      }
+
+      const amount = product.price; // TODO цена по itemId
 
       const res = await fetch("/api/cryptobot/create-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount,
-          description: `Оплата товара #${itemId}`,
+          description: `Оплата: ${product.title}`,
           payload: `item_${itemId}_${Date.now()}`,
         }),
       });
