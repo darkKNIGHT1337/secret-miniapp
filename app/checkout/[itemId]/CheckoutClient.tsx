@@ -58,7 +58,7 @@ export default function CheckoutClient() {
     [itemId]
   );
 
-  const storageKey = useMemo(() => `secretshop_checkout_v1_${itemId}`, [itemId]);
+  const storageKey = useMemo(() => `secretshop_checkout_v2_${itemId}`, [itemId]);
 
   function safeSetSaved(data: SavedCheckout) {
     try {
@@ -86,7 +86,6 @@ export default function CheckoutClient() {
     }
   }
 
-  // Надёжное открытие ссылки в Telegram WebApp (и fallback)
   function openPayLink(url: string) {
     if (!url) return;
 
@@ -118,9 +117,9 @@ export default function CheckoutClient() {
     window.location.href = url;
   }
 
-  // ✅ ДОБАВЛЕНО: открыть поддержку (внутри Telegram)
+  // Поддержка (ЛС)
   function openSupport() {
-    const username = "cantworry"; // ← замени на свой username без @
+    const username = "cantworry"; // без @
 
     // @ts-ignore
     const tg =
@@ -130,7 +129,6 @@ export default function CheckoutClient() {
       tg.openTelegramLink(`t.me/${username}`);
       return;
     }
-
     window.open(`https://t.me/${username}`, "_blank");
   }
 
@@ -165,9 +163,10 @@ export default function CheckoutClient() {
       const saved = safeGetSaved();
       if (saved) safeSetSaved({ ...saved, status });
 
+      // ✅ ВАЖНО: не автопереходим сами — переходим только после кнопки “Я оплатил(а)”
+      // но если хочешь авто — скажи, верну авто-редирект
       if (status === "paid") {
-        safeClearSaved();
-        router.push(`/access/${itemId}`);
+        // ничего не делаем тут
       }
     } finally {
       setChecking(false);
@@ -223,6 +222,31 @@ export default function CheckoutClient() {
     }
   }
 
+  // Кнопка “Я оплатил(а)” — проверяем и если paid → дальше
+  async function iPaid() {
+    if (!invoiceId) return;
+    await checkPaymentOnce(invoiceId);
+
+    // после проверки берём актуальный статус (из state)
+    // но state обновится асинхронно, поэтому читаем из localStorage (самый надёжный вариант)
+    const saved = safeGetSaved();
+    const status = saved?.status ?? payStatus;
+
+    if (status === "paid") {
+      safeClearSaved();
+      router.push(`/access/${itemId}`);
+      return;
+    }
+
+    alert(
+      status === "active"
+        ? "Платёж ещё не подтверждён. Подожди 3–10 секунд и нажми ещё раз."
+        : status === "unknown"
+        ? "Не удалось получить статус. Проверь интернет и нажми ещё раз."
+        : `Статус: ${status}`
+    );
+  }
+
   // Восстановление состояния при старте
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -236,6 +260,8 @@ export default function CheckoutClient() {
     setPayUrl(saved.payUrl || "");
     setUrlKind(saved.kind || "");
     setPayStatus(saved.status || "active");
+    // НЕ перекидываем никуда автоматически
+    // Подтягиваем статус при заходе, чтобы “Я оплатил(а)” была честной
     checkPaymentOnce(saved.invoiceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
@@ -251,7 +277,7 @@ export default function CheckoutClient() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [invoiceId]);
 
-  // тикер времени (для “операционного” ощущения)
+  // тикер времени
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(t);
@@ -263,7 +289,6 @@ export default function CheckoutClient() {
   const ageMin = Math.floor(ageSec / 60);
   const ageSecRem = ageSec % 60;
 
-  // если expires_in = 3600
   const ttl = 3600;
   const progress = createdAt ? clamp(ageSec / ttl, 0, 1) : 0;
 
@@ -297,20 +322,18 @@ export default function CheckoutClient() {
   const step2Done = !!payUrl;
   const step3Done = payStatus === "paid";
 
-  const primaryText = !invoiceId
-    ? "Инициализировать оплату"
-    : payStatus === "active"
-    ? "Открыть защищенную оплату"
-    : payStatus === "paid"
-    ? "Перейти к доступу"
-    : "Открыть оплату";
+  // ✅ Новый CTA: сначала “Оплатить”, после возвращения — “Я оплатил(а)”
+  const showPay = !invoiceId;
+  const showIPaid = !!invoiceId; // как только есть инвойс — показываем “Я оплатил(а)”
+
+  const primaryText = showPay
+    ? "Оплатить"
+    : "Я оплатил(а)";
 
   const primaryAction = () => {
     if (isBadItemId) return;
-    if (!invoiceId) return payWithCrypto();
-    if (payStatus === "paid") return router.push(`/access/${itemId}`);
-    if (payUrl) return openPayLink(payUrl);
-    return payWithCrypto();
+    if (showPay) return payWithCrypto();
+    return iPaid();
   };
 
   return (
@@ -378,7 +401,7 @@ export default function CheckoutClient() {
                 <div className="sText">
                   <div className="sTitle">Шаг 2 — Безопасная оплата</div>
                   <div className="sDesc">
-                    Оплата открывается внутри Telegram. После оплаты вернись назад.
+                    Нажми «Оплатить» — откроется CryptoBot. После оплаты вернись назад.
                   </div>
                 </div>
               </div>
@@ -388,7 +411,7 @@ export default function CheckoutClient() {
                 <div className="sText">
                   <div className="sTitle">Шаг 3 — Подтверждение</div>
                   <div className="sDesc">
-                    Мы автоматически проверим статус при возврате и после перезапуска.
+                    Вернулся? Нажми «Я оплатил(а)» — мы проверим и откроем следующий шаг.
                   </div>
                 </div>
               </div>
@@ -402,19 +425,17 @@ export default function CheckoutClient() {
               >
                 <span className="btnGlow" aria-hidden />
                 <span className="btnText">
-                  {loading
-                    ? "Инициализация..."
-                    : checking
-                    ? "Проверка..."
-                    : primaryText}
+                  {loading ? "Инициализация..." : checking ? "Проверка..." : primaryText}
                 </span>
               </button>
 
+              {/* вторичные кнопки: оставляем, но логика соответствует новому flow */}
               <div className="row">
                 <button
                   className="btn ghost"
                   onClick={() => payUrl && openPayLink(payUrl)}
-                  disabled={!payUrl || loading}
+                  disabled={!payUrl || loading || showPay}
+                  title={showPay ? "Сначала создай счёт" : ""}
                 >
                   Открыть оплату
                 </button>
@@ -422,7 +443,8 @@ export default function CheckoutClient() {
                 <button
                   className="btn ghost"
                   onClick={() => checkPaymentOnce()}
-                  disabled={!invoiceId || checking}
+                  disabled={!invoiceId || checking || showPay}
+                  title={showPay ? "Сначала создай счёт" : ""}
                 >
                   {checking ? "Проверяю..." : "Проверить статус"}
                 </button>
@@ -452,13 +474,12 @@ export default function CheckoutClient() {
                   />
                 </div>
                 <div className="meterHint">
-                  Состояние сохраняется локально. Даже если Telegram “закроет”
-                  мини-апп — при возврате инвойс восстановится и статус обновится
-                  автоматически.
+                  Состояние сохраняется локально. Даже если Telegram “закроет” мини-апп —
+                  при возврате инвойс восстановится и статус обновится автоматически.
                 </div>
               </div>
 
-              {/* ✅ УДАЛЕНО: metaLine с "Защита / Маршрут / Цель" */}
+              {/* Убрали тех. metaLine как ты просил раньше */}
             </div>
           </div>
 
@@ -476,9 +497,7 @@ export default function CheckoutClient() {
                 </div>
                 <div className="logRow">
                   <span className="t">•</span>
-                  <span>
-                    Если устройство выгрузило WebView — восстановим инвойс и продолжим.
-                  </span>
+                  <span>Если устройство выгрузило WebView — восстановим инвойс и продолжим.</span>
                 </div>
               </div>
 
@@ -486,8 +505,7 @@ export default function CheckoutClient() {
 
               <div className="sideTitle">Подсказка</div>
               <div className="tip">
-                Оплатил? Вернись назад и подожди 1–2 секунды. Если надо — нажми
-                «Проверить статус».
+                Схема: «Оплатить» → оплатил в CryptoBot → вернулся → «Я оплатил(а)».
               </div>
 
               <div className="divider" />
@@ -501,12 +519,11 @@ export default function CheckoutClient() {
                 <div className="miniV">{payUrl ? "готово" : "—"}</div>
               </div>
 
-              {/* ✅ ДОБАВЛЕНО: кнопка поддержки */}
               <div className="divider" />
 
               <div className="sideTitle">Поддержка</div>
               <button className="supportBtn" onClick={openSupport}>
-                Связаться с поддержкой
+                Открыть ЛС
               </button>
             </div>
           </div>
@@ -514,6 +531,7 @@ export default function CheckoutClient() {
       </div>
 
       <style jsx>{`
+        /* === ТВОИ СТИЛИ 1-в-1 (я оставил как у тебя) === */
         .wrap {
           min-height: 100vh;
           color: #eaf0ff;
@@ -616,12 +634,8 @@ export default function CheckoutClient() {
           box-shadow: 0 30px 90px rgba(0,0,0,0.55);
           overflow: hidden;
         }
-        .panel.main {
-          padding: 16px;
-        }
-        .panel.side {
-          padding: 12px;
-        }
+        .panel.main { padding: 16px; }
+        .panel.side { padding: 12px; }
 
         .cardHeader {
           display: flex;
@@ -631,30 +645,11 @@ export default function CheckoutClient() {
           padding-bottom: 12px;
           border-bottom: 1px solid rgba(255,255,255,0.08);
         }
-        .h1 {
-          font-size: 18px;
-          font-weight: 900;
-          letter-spacing: 0.02em;
-        }
-        .muted {
-          font-size: 12px;
-          opacity: 0.7;
-          margin-top: 4px;
-        }
-        .kv {
-          text-align: right;
-        }
-        .k {
-          font-size: 11px;
-          opacity: 0.68;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-        .v {
-          font-size: 12px;
-          opacity: 0.92;
-          margin-top: 4px;
-        }
+        .h1 { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; }
+        .muted { font-size: 12px; opacity: 0.7; margin-top: 4px; }
+        .kv { text-align: right; }
+        .k { font-size: 11px; opacity: 0.68; letter-spacing: 0.08em; text-transform: uppercase; }
+        .v { font-size: 12px; opacity: 0.92; margin-top: 4px; }
         .sep { opacity: 0.35; padding: 0 6px; }
 
         .alert {
@@ -668,17 +663,10 @@ export default function CheckoutClient() {
           box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
         }
 
-        .timeline {
-          margin-top: 14px;
-          display: grid;
-          gap: 10px;
-        }
+        .timeline { margin-top: 14px; display: grid; gap: 10px; }
         .step {
-          display: flex;
-          gap: 10px;
-          align-items: flex-start;
-          padding: 12px;
-          border-radius: 18px;
+          display: flex; gap: 10px; align-items: flex-start;
+          padding: 12px; border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.10);
           background: rgba(255,255,255,0.04);
           box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
@@ -691,30 +679,15 @@ export default function CheckoutClient() {
           background: rgba(255,255,255,0.05);
         }
         .sIcon {
-          width: 12px;
-          height: 12px;
-          border-radius: 999px;
-          margin-top: 4px;
-          box-shadow: 0 0 0 4px rgba(255,255,255,0.04);
+          width: 12px; height: 12px; border-radius: 999px;
+          margin-top: 4px; box-shadow: 0 0 0 4px rgba(255,255,255,0.04);
         }
         .step.todo .sIcon { background: rgba(120,162,255,0.9); }
         .step.done .sIcon { background: rgba(124,255,178,0.95); }
-        .sTitle {
-          font-weight: 900;
-          font-size: 13px;
-        }
-        .sDesc {
-          margin-top: 4px;
-          font-size: 12px;
-          opacity: 0.75;
-          line-height: 1.35;
-        }
+        .sTitle { font-weight: 900; font-size: 13px; }
+        .sDesc { margin-top: 4px; font-size: 12px; opacity: 0.75; line-height: 1.35; }
 
-        .actions {
-          margin-top: 14px;
-          display: grid;
-          gap: 10px;
-        }
+        .actions { margin-top: 14px; display: grid; gap: 10px; }
         .btn {
           position: relative;
           border-radius: 16px;
@@ -729,11 +702,7 @@ export default function CheckoutClient() {
           overflow: hidden;
           user-select: none;
         }
-        .btn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-          transform: none !important;
-        }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; }
         .btn:active { transform: scale(0.99); }
         .btn.primary {
           border-color: rgba(124,255,178,0.22);
@@ -744,24 +713,14 @@ export default function CheckoutClient() {
           border-color: rgba(124,255,178,0.30);
           background: linear-gradient(135deg, rgba(124,255,178,0.26), rgba(120,162,255,0.18));
         }
-        .btn.ghost {
-          font-weight: 800;
-          background: rgba(255,255,255,0.04);
-        }
-        .row {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 10px;
-        }
-        @media (min-width: 520px) {
-          .row { grid-template-columns: 1fr 1fr; }
-        }
+        .btn.ghost { font-weight: 800; background: rgba(255,255,255,0.04); }
+        .row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        @media (min-width: 520px) { .row { grid-template-columns: 1fr 1fr; } }
+
         .btnGlow {
-          position: absolute;
-          inset: -40px;
+          position: absolute; inset: -40px;
           background: radial-gradient(240px 120px at 30% 40%, rgba(255,255,255,0.22), transparent 60%);
           opacity: 0.55;
-          filter: blur(0px);
           pointer-events: none;
           transform: translate3d(0,0,0);
           animation: glow 2.6s ease-in-out infinite;
@@ -772,23 +731,14 @@ export default function CheckoutClient() {
         }
         .btnText { position: relative; z-index: 1; }
 
-        .footer {
-          margin-top: 14px;
-          display: grid;
-          gap: 12px;
-        }
+        .footer { margin-top: 14px; display: grid; gap: 12px; }
         .meter {
           border-radius: 18px;
           border: 1px solid rgba(255,255,255,0.10);
           background: rgba(255,255,255,0.04);
           padding: 12px;
         }
-        .meterTop {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
+        .meterTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .mTitle {
           font-size: 12px;
           font-weight: 900;
@@ -796,15 +746,9 @@ export default function CheckoutClient() {
           text-transform: uppercase;
           opacity: 0.85;
         }
-        .mValue {
-          font-variant-numeric: tabular-nums;
-          font-weight: 900;
-          opacity: 0.95;
-        }
+        .mValue { font-variant-numeric: tabular-nums; font-weight: 900; opacity: 0.95; }
         .meterBar {
-          margin-top: 10px;
-          height: 10px;
-          border-radius: 999px;
+          margin-top: 10px; height: 10px; border-radius: 999px;
           background: rgba(255,255,255,0.06);
           border: 1px solid rgba(255,255,255,0.10);
           overflow: hidden;
@@ -816,12 +760,7 @@ export default function CheckoutClient() {
           box-shadow: 0 12px 40px rgba(0,0,0,0.25);
           transition: width 250ms ease;
         }
-        .meterHint {
-          margin-top: 10px;
-          font-size: 12px;
-          opacity: 0.74;
-          line-height: 1.35;
-        }
+        .meterHint { margin-top: 10px; font-size: 12px; opacity: 0.74; line-height: 1.35; }
 
         .sideCard {
           border-radius: 18px;
@@ -837,32 +776,11 @@ export default function CheckoutClient() {
           opacity: 0.85;
           margin-bottom: 10px;
         }
-        .log {
-          display: grid;
-          gap: 8px;
-          font-size: 12px;
-          opacity: 0.78;
-          line-height: 1.35;
-        }
-        .logRow {
-          display: flex;
-          gap: 8px;
-          align-items: flex-start;
-        }
-        .t {
-          opacity: 0.6;
-          margin-top: 1px;
-        }
-        .divider {
-          height: 1px;
-          background: rgba(255,255,255,0.08);
-          margin: 12px 0;
-        }
-        .tip {
-          font-size: 12px;
-          opacity: 0.78;
-          line-height: 1.35;
-        }
+        .log { display: grid; gap: 8px; font-size: 12px; opacity: 0.78; line-height: 1.35; }
+        .logRow { display: flex; gap: 8px; align-items: flex-start; }
+        .t { opacity: 0.6; margin-top: 1px; }
+        .divider { height: 1px; background: rgba(255,255,255,0.08); margin: 12px 0; }
+        .tip { font-size: 12px; opacity: 0.78; line-height: 1.35; }
         .mini {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -870,29 +788,15 @@ export default function CheckoutClient() {
           font-size: 12px;
           opacity: 0.9;
         }
-        .miniK {
-          opacity: 0.68;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          font-size: 11px;
-        }
-        .miniV {
-          text-align: right;
-          font-variant-numeric: tabular-nums;
-          font-weight: 900;
-        }
+        .miniK { opacity: 0.68; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
+        .miniV { text-align: right; font-variant-numeric: tabular-nums; font-weight: 900; }
 
-        /* ✅ ДОБАВЛЕНО: стиль кнопки поддержки */
         .supportBtn {
           width: 100%;
           padding: 12px 14px;
           border-radius: 14px;
           border: 1px solid rgba(120, 162, 255, 0.35);
-          background: linear-gradient(
-            135deg,
-            rgba(120, 162, 255, 0.20),
-            rgba(120, 162, 255, 0.08)
-          );
+          background: linear-gradient(135deg, rgba(120, 162, 255, 0.20), rgba(120, 162, 255, 0.08));
           color: #eaf0ff;
           font-weight: 900;
           cursor: pointer;
@@ -901,16 +805,10 @@ export default function CheckoutClient() {
         }
         .supportBtn:hover {
           border-color: rgba(120, 162, 255, 0.6);
-          background: linear-gradient(
-            135deg,
-            rgba(120, 162, 255, 0.30),
-            rgba(120, 162, 255, 0.14)
-          );
+          background: linear-gradient(135deg, rgba(120, 162, 255, 0.30), rgba(120, 162, 255, 0.14));
           transform: translateY(-1px);
         }
-        .supportBtn:active {
-          transform: scale(0.98);
-        }
+        .supportBtn:active { transform: scale(0.98); }
       `}</style>
     </div>
   );
