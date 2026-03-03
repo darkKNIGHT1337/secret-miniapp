@@ -305,6 +305,19 @@ export default function CheckoutClient() {
   // если expires_in = 3600
   const ttl = 3600;
   const progress = createdAt ? clamp(ageSec / ttl, 0, 1) : 0;
+  // Авто-закрытие по истечению времени (60 минут)
+useEffect(() => {
+  if (!invoiceId) return;
+  if (!createdAt) return;
+
+  const ttlMs = 3600 * 1000;
+  const isExpired = Date.now() - createdAt >= ttlMs;
+
+  if (isExpired && payStatus !== "paid" && payStatus !== "expired") {
+    setPayStatus("expired");
+    safeClearSaved();
+  }
+}, [nowTick, invoiceId, createdAt, payStatus]);
 
   const statusLabel =
     payStatus === "paid"
@@ -436,7 +449,7 @@ export default function CheckoutClient() {
                 <div className="sText">
                   <div className="sTitle">Шаг 3 — Подтверждение</div>
                   <div className="sDesc">
-                    Вернулся? Нажми «Я оплатил(а)» — мы проверим и откроем следующий шаг.
+                    Вернулся? Нажми «Я оплатил(а)». Если время истекло — создайте новую сессию. — мы проверим и откроем следующий шаг.
                   </div>
                 </div>
               </div>
@@ -1012,7 +1025,7 @@ export default function CheckoutClient() {
 .topBtn:active {
   transform: scale(0.98);
 }
-  
+
       `}</style>
     </div>
   );
