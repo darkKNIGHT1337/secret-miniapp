@@ -295,9 +295,26 @@ export default function CheckoutClient() {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+  
+  useEffect(() => {
+  if (!invoiceId) return;
+
+  const savedNow = safeGetSaved();
+  const ca = savedNow?.createdAt ?? 0;
+  if (!ca) return;
+
+  const ttlMs = 3600 * 1000; // 60 минут
+  const expired = Date.now() - ca >= ttlMs;
+
+  if (expired && payStatus !== "paid") {
+    setPayStatus("expired");
+    safeClearSaved(); // убираем “висяк” навсегда
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [nowTick, invoiceId]);
 
   const saved = typeof window !== "undefined" ? safeGetSaved() : null;
-  const createdAt = saved?.createdAt ?? (invoiceId ? Date.now() : 0);
+  const createdAt = saved?.createdAt ?? 0;
   const ageSec = createdAt ? Math.floor((nowTick - createdAt) / 1000) : 0;
   const ageMin = Math.floor(ageSec / 60);
   const ageSecRem = ageSec % 60;
@@ -349,16 +366,19 @@ useEffect(() => {
   const step2Done = !!payUrl;
   const step3Done = payStatus === "paid";
 
-  const showPay = !invoiceId;
-  const showIPaid = !!invoiceId;
+  const isFinal =
+  payStatus === "paid" || payStatus === "expired" || payStatus === "cancelled";
+
+const showPay = !invoiceId || isFinal;     // финал = снова предлагаем создать новую
+const showIPaid = !!invoiceId && !isFinal; // “Я оплатил” только пока активна
 
   const primaryText = showPay ? "Оплатить" : "Я оплатил(а)";
 
-  const primaryAction = () => {
-    if (isBadItemId) return;
-    if (showPay) return payWithCrypto();
-    return iPaid();
-  };
+const primaryAction = () => {
+  if (isBadItemId) return;
+  if (showPay) return payWithCrypto();
+  return iPaid();
+};
 
   return (
     <div className="wrap">
@@ -572,6 +592,18 @@ useEffect(() => {
               >
                 Открыть ЛС
               </button>
+              <button
+  className="supportBtn"
+  onClick={() => {
+    safeClearSaved();
+    setInvoiceId(null);
+    setPayUrl("");
+    setUrlKind("");
+    setPayStatus("");
+  }}
+>
+  Закрыть сессию
+</button>
             </div>
           </div>
         </div>
