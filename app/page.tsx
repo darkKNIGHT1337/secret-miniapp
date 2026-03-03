@@ -1,491 +1,375 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion, useMotionValue, animate } from "framer-motion";
-import { useRouter } from "next/navigation";
+import Image from "next/image";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
-type Product = {
-  id: number;
-  title: string;
-  desc: string;
-  price: number;
-  tag?: string;
-};
+export default function PremiumHeader() {
+  const ref = useRef<HTMLDivElement | null>(null);
 
-type PayItem = {
-  id: number;
-  title: string;
-  desc: string;
-  price: number;
-  tag?: string;
-  section: "manuals" | "work";
-};
+  // subtle parallax from pointer (works on desktop; on mobile stays calm)
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
 
-type Section = "services" | "manuals" | "work";
+  const sx = useSpring(mx, { stiffness: 220, damping: 26, mass: 0.8 });
+  const sy = useSpring(my, { stiffness: 220, damping: 26, mass: 0.8 });
 
-declare global {
-  interface Window {
-    Telegram?: any;
-  }
-}
+  const rotX = useTransform(sy, [-40, 40], [4, -4]);
+  const rotY = useTransform(sx, [-40, 40], [-5, 5]);
+  const shiftX = useTransform(sx, [-40, 40], [-10, 10]);
+  const shiftY = useTransform(sy, [-40, 40], [-8, 8]);
 
-export default function Page() {
   const [ready, setReady] = useState(false);
 
-  // порядок вкладок
-  const sectionsOrder: Section[] = ["manuals", "work", "services"];
-  const [index, setIndex] = useState(0); // 0 manuals, 1 work, 2 services
-  const section = sectionsOrder[index];
-
-  const router = useRouter();
-
-  // pager sizing
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [vw, setVw] = useState(0);
-
-  // motion x
-  const x = useMotionValue(0);
-
-  // data
-  const products: Product[] = useMemo(
-    () => [
-      {
-        id: 1,
-        title: "Услуга / Настройка",
-        desc: "Разовая задача: подключение, настройка, правки. Быстро и аккуратно.",
-        price: 499,
-        tag: "FAST",
-      },
-      {
-        id: 2,
-        title: "Разработка / Доработка",
-        desc: "Кастомная логика, дизайн, интеграции. Оценка после ТЗ.",
-        price: 999,
-        tag: "PRO",
-      },
-      {
-        id: 3,
-        title: "Поддержка / Сопровождение",
-        desc: "Правки, улучшения, контроль, мелкие доработки по ходу.",
-        price: 299,
-        tag: "BEST",
-      },
-    ],
-    []
-  );
-
-  const payItems: PayItem[] = useMemo(
-    () => [
-      {
-        id: 101,
-        section: "manuals",
-        title: "Гайд / Мануал (Base)",
-        desc: "Структурно, по шагам. Выдача сразу после оплаты.",
-        price: 199,
-        tag: "TOP",
-      },
-      {
-        id: 102,
-        section: "manuals",
-        title: "Гайд / Мануал (PRO)",
-        desc: "Глубже + дополнительные советы и фишки.",
-        price: 299,
-        tag: "PRO",
-      },
-      {
-        id: 201,
-        section: "work",
-        title: "Ворк-пак (Start)",
-        desc: "Материалы/примеры. Доступ после оплаты.",
-        price: 499,
-        tag: "CASE",
-      },
-      {
-        id: 202,
-        section: "work",
-        title: "Ворк-пак (VIP)",
-        desc: "Расширенный набор + бонусы. Доступ после оплаты.",
-        price: 799,
-        tag: "VIP",
-      },
-    ],
-    []
-  );
-
   useEffect(() => {
-    const tg = window.Telegram?.WebApp;
+    // Telegram ready indicator (optional)
+    // @ts-ignore
+    const tg = typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
     if (tg) {
-      tg.ready();
-      tg.expand();
+      try {
+        tg.ready();
+        tg.expand();
+      } catch {}
     }
     setReady(true);
   }, []);
 
-  const goCheckout = (itemId: number) => {
-  try {
-    sessionStorage.setItem("checkout_itemId", String(itemId));
-  } catch {}
-  router.push(`/checkout/${itemId}`);
-};
-
-  const openSupport = () => {
-    const tg = window.Telegram?.WebApp;
-    const url = "https://t.me/cantworry";
-    if (tg?.openTelegramLink) tg.openTelegramLink(url);
-    else window.open(url, "_blank");
-  };
-
-  // measure width
-  useLayoutEffect(() => {
-    const el = viewportRef.current;
+  const onMove = (e: React.PointerEvent) => {
+    const el = ref.current;
     if (!el) return;
 
-    const apply = () => {
-      const w = el.getBoundingClientRect().width;
-      setVw(w);
-    };
+    const rect = el.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
 
-    apply();
+    // normalize around center
+    const dx = px - rect.width / 2;
+    const dy = py - rect.height / 2;
 
-    const ro = new ResizeObserver(() => apply());
-    ro.observe(el);
+    // clamp for stability
+    const cx = Math.max(-40, Math.min(40, (dx / rect.width) * 120));
+    const cy = Math.max(-40, Math.min(40, (dy / rect.height) * 120));
 
-    return () => ro.disconnect();
-  }, []);
-
-  // keep x in sync when index or vw changes
-  useEffect(() => {
-    if (!vw) return;
-    animate(x, -index * vw, {
-      type: "spring",
-      stiffness: 320,
-      damping: 34,
-      mass: 0.9,
-    });
-  }, [index, vw, x]);
-
-  const setTab = (id: Section) => {
-    const next = sectionsOrder.indexOf(id);
-    if (next === -1 || next === index) return;
-    setIndex(next);
+    mx.set(cx);
+    my.set(cy);
   };
 
-  const Badge = ({ children }: { children: React.ReactNode }) => (
-    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-extrabold tracking-wider text-white/70">
-      {children}
-    </span>
-  );
-
-  const ItemCard = ({
-    title,
-    desc,
-    tag,
-    price,
-    priceNote,
-    actionText,
-    onAction,
-    idx,
-    icon,
-  }: {
-    title: string;
-    desc: string;
-    tag?: string;
-    price: string;
-    priceNote: string;
-    actionText: string;
-    onAction: () => void;
-    idx: number;
-    icon: string;
-  }) => (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: idx * 0.04, duration: 0.28 }}
-      className="group rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-    >
-      <div className="flex items-start gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.06] text-lg">
-          {icon}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="min-w-0 flex-1 truncate text-[15px] font-extrabold tracking-tight text-white">
-              {title}
-            </h3>
-            {tag ? <Badge>{tag}</Badge> : null}
-          </div>
-
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <p className="min-w-0 flex-1 line-clamp-2 text-sm text-white/65">
-              {desc}
-            </p>
-
-            <div className="shrink-0 text-right">
-              <div className="text-[15px] font-extrabold text-white whitespace-nowrap">
-                {price}
-              </div>
-              <div className="mt-0.5 text-[11px] text-white/45 whitespace-nowrap">
-                {priceNote}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-white/45">
-          {priceNote === "примерно"
-            ? "Цена ориентировочная"
-            : "Моментальная выдача после оплаты"}
-        </div>
-
-        <button
-          onClick={onAction}
-          className="w-full sm:w-auto rounded-2xl px-4 py-2 text-sm font-extrabold border border-white/10 bg-white/10 hover:bg-white/[0.14] text-white transition-colors"
-        >
-          {actionText}
-        </button>
-      </div>
-    </motion.div>
-  );
-
-  const Header = () => (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/[0.06]">
-              🛍️
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <div className="truncate text-lg font-extrabold tracking-tight text-white">
-                  Secret Shop
-                </div>
-                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold text-white/65">
-                  mini app
-                </span>
-              </div>
-              <div className="mt-1 text-sm text-white/60">
-                Свайпай плавно как iOS — экран едет вместе с пальцем ✨
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="shrink-0 text-right">
-          <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2">
-            <span className={["h-2 w-2 rounded-full", ready ? "bg-emerald-400" : "bg-white/25"].join(" ")} />
-            <span className="text-xs font-semibold text-white/70">
-              {ready ? "online" : "loading"}
-            </span>
-          </div>
-          <div className="mt-2 text-[11px] text-white/40">Kyiv time</div>
-        </div>
-      </div>
-
-      <div className="mt-4 flex gap-2 rounded-[22px] border border-white/10 bg-black/20 p-2">
-        {sectionsOrder.map((id) => {
-          const active = section === id;
-          const label = id === "manuals" ? "Мануалы" : id === "work" ? "Ворк" : "Услуги";
-          return (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={[
-                "relative inline-flex flex-1 items-center justify-center rounded-2xl px-3 py-2 text-sm font-semibold transition-colors",
-                active
-                  ? "text-white bg-white/10 border border-white/10"
-                  : "text-white/70 hover:text-white hover:bg-white/[0.06] border border-transparent",
-              ].join(" ")}
-            >
-              {label}
-              {active && (
-                <motion.span
-                  layoutId="tabPill"
-                  className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10"
-                  transition={{ type: "spring", stiffness: 340, damping: 28 }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  const Manuals = () => {
-    const items = payItems.filter((x) => x.section === "manuals");
-    return (
-      <div className="mt-4 grid gap-3">
-        <div className="px-1">
-          <div className="text-sm font-extrabold text-white">📚 Мануалы</div>
-          <div className="mt-1 text-sm text-white/60">Выбирай и переходи к оплате.</div>
-        </div>
-
-        {items.map((x, idx) => (
-          <ItemCard
-            key={x.id}
-            idx={idx}
-            icon="📘"
-            title={x.title}
-            desc={x.desc}
-            tag={x.tag}
-            price={`${x.price} ₴`}
-            priceNote="к оплате"
-            actionText="Оплатить"
-            onAction={() => goCheckout(x.id)}
-          />
-        ))}
-      </div>
-    );
-  };
-
-  const Work = () => {
-    const items = payItems.filter((x) => x.section === "work");
-    return (
-      <div className="mt-4 grid gap-3">
-        <div className="px-1">
-          <div className="text-sm font-extrabold text-white">💼 Ворк</div>
-          <div className="mt-1 text-sm text-white/60">Пакеты материалов — выдача после оплаты.</div>
-        </div>
-
-        {items.map((x, idx) => (
-          <ItemCard
-            key={x.id}
-            idx={idx}
-            icon="💼"
-            title={x.title}
-            desc={x.desc}
-            tag={x.tag}
-            price={`${x.price} ₴`}
-            priceNote="к оплате"
-            actionText="Оплатить"
-            onAction={() => goCheckout(x.id)}
-          />
-        ))}
-      </div>
-    );
-  };
-
-  const Services = () => (
-    <div className="mt-4 grid gap-3">
-      <div className="px-1">
-        <div className="text-sm font-extrabold text-white">🛠 Услуги</div>
-        <div className="mt-1 text-sm text-white/60">
-          Здесь цены ориентировочные. Точную стоимость — в ЛС.
-        </div>
-      </div>
-
-      {products.map((p, idx) => (
-        <ItemCard
-          key={p.id}
-          idx={idx}
-          icon="🛠️"
-          title={p.title}
-          desc={p.desc}
-          tag={p.tag}
-          price={`~${p.price} ₴`}
-          priceNote="примерно"
-          actionText="Написать"
-          onAction={openSupport}
-        />
-      ))}
-    </div>
-  );
-
-  // drag end snap
-  const onDragEnd = (_: any, info: { offset: { x: number }; velocity: { x: number } }) => {
-    if (!vw) return;
-
-    const offsetX = info.offset.x;
-    const vX = info.velocity.x;
-
-    // пороги (чтобы было "как iOS")
-    const swipeByOffset = Math.abs(offsetX) > vw * 0.22;
-    const swipeByVelocity = Math.abs(vX) > 550;
-
-    let nextIndex = index;
-
-    if (swipeByOffset || swipeByVelocity) {
-      if (offsetX < 0) nextIndex = Math.min(index + 1, sectionsOrder.length - 1); // swipe left -> next
-      if (offsetX > 0) nextIndex = Math.max(index - 1, 0); // swipe right -> prev
-    }
-
-    setIndex(nextIndex);
-
-    // анимируем к ближайшему экрану
-    animate(x, -nextIndex * vw, {
-      type: "spring",
-      stiffness: 320,
-      damping: 34,
-      mass: 0.9,
-    });
+  const onLeave = () => {
+    mx.set(0);
+    my.set(0);
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F14] text-white">
-      {/* background */}
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(900px_500px_at_20%_10%,rgba(255,255,255,0.06),transparent_60%),radial-gradient(700px_500px_at_90%_20%,rgba(120,180,255,0.06),transparent_60%),radial-gradient(700px_600px_at_40%_90%,rgba(170,120,255,0.05),transparent_60%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.0),rgba(0,0,0,0.65))]" />
-        <div className="absolute inset-0 opacity-[0.06] noise" />
-      </div>
-
-      <div className="relative mx-auto max-w-[560px] px-4 py-5">
-        <Header />
-
-        {/* iOS-like pager */}
-        <div
-          ref={viewportRef}
-          className="relative mt-3 overflow-hidden"
-          style={{ touchAction: "pan-y" }} // важно: сохраняем вертикальный скролл, горизонталь — наш drag
+    <motion.div
+      ref={ref}
+      className="hero"
+      onPointerMove={onMove}
+      onPointerLeave={onLeave}
+      style={{
+        rotateX: rotX,
+        rotateY: rotY,
+        transformStyle: "preserve-3d",
+      }}
+    >
+      {/* Banner image */}
+      <div className="banner" aria-hidden>
+        <motion.div
+          className="bannerInner"
+          style={{
+            x: shiftX,
+            y: shiftY,
+          }}
         >
-          <motion.div
-            drag="x"
-            dragMomentum={false}
-            dragElastic={0.08}
-            style={{ x }}
-            onDragEnd={onDragEnd}
-            // ограничиваем перетягивание на крайних вкладках
-            dragConstraints={{
-              left: -(sectionsOrder.length - 1) * vw,
-              right: 0,
-            }}
-            className="flex"
-          >
-            <div className="w-full shrink-0" style={{ width: vw || "100%" }}>
-              <Manuals />
-            </div>
-            <div className="w-full shrink-0" style={{ width: vw || "100%" }}>
-              <Work />
-            </div>
-            <div className="w-full shrink-0" style={{ width: vw || "100%" }}>
-              <Services />
-            </div>
-          </motion.div>
+          <Image
+            src="/brand/banner.jpg"
+            alt=""
+            fill
+            priority
+            sizes="(max-width: 768px) 100vw, 900px"
+            style={{ objectFit: "cover" }}
+          />
+        </motion.div>
 
-          {/* лёгкая “подсветка” краёв как у iOS */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-[linear-gradient(to_right,rgba(11,15,20,0.9),transparent)]" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-4 bg-[linear-gradient(to_left,rgba(11,15,20,0.9),transparent)]" />
+        {/* premium overlay stack */}
+        <div className="overlay overlayTint" />
+        <div className="overlay overlayGlow" />
+        <div className="overlay overlayVignette" />
+
+        {/* moving shine */}
+        <motion.div
+          className="shine"
+          aria-hidden
+          animate={{ x: ["-30%", "130%"] }}
+          transition={{ duration: 3.8, repeat: Infinity, ease: "easeInOut" }}
+        />
+
+        {/* ultra subtle grain */}
+        <div className="grain" aria-hidden />
+      </div>
+
+      <div className="content">
+        <div className="left">
+          <div className="avatarWrap">
+            <div className="avatar">
+              <Image
+                src="/brand/avatar.png"
+                alt="Secret Shop"
+                fill
+                priority
+                sizes="64px"
+                style={{ objectFit: "cover" }}
+              />
+            </div>
+            <div className="avatarRing" aria-hidden />
+          </div>
+
+          <div className="titles">
+            <div className="titleRow">
+              <div className="title">Secret Shop</div>
+              <span className="pill">mini app</span>
+            </div>
+            <div className="subtitle">Premium access • Private catalog</div>
+          </div>
         </div>
 
-        <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-sm text-white/65">
-          💬 Нужна помощь?{" "}
-          <button onClick={openSupport} className="font-bold text-white hover:opacity-90">
-            Напиши в поддержку
-          </button>
-          .
+        <div className="right">
+          <div className="status">
+            <span className="dot" aria-hidden />
+            <span>{ready ? "online" : "loading"}</span>
+          </div>
         </div>
       </div>
 
-      <style jsx global>{`
-        .noise {
-          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+      {/* premium stroke + inner gloss */}
+      <div className="stroke" aria-hidden />
+      <div className="gloss" aria-hidden />
+
+      <style jsx>{`
+        .hero {
+          position: relative;
+          border-radius: 28px;
+          background: rgba(17, 24, 38, 0.52);
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          box-shadow:
+            0 40px 140px rgba(0, 0, 0, 0.60),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+          overflow: hidden;
+          perspective: 900px;
+          will-change: transform;
+        }
+
+        .banner {
+          position: absolute;
+          inset: 0;
+        }
+        .bannerInner {
+          position: absolute;
+          inset: -10px; /* allow parallax without edges */
+          filter: saturate(1.05) contrast(1.05);
+          transform: translateZ(-1px);
+        }
+
+        .overlay {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+        }
+        .overlayTint {
+          background:
+            radial-gradient(900px 380px at 18% 0%, rgba(124, 255, 178, 0.18), transparent 62%),
+            radial-gradient(700px 380px at 85% 25%, rgba(120, 162, 255, 0.18), transparent 60%),
+            linear-gradient(180deg, rgba(7, 10, 15, 0.18), rgba(7, 10, 15, 0.74) 62%, rgba(7, 10, 15, 0.92));
+        }
+        .overlayGlow {
+          background:
+            radial-gradient(500px 240px at 35% 35%, rgba(255, 255, 255, 0.05), transparent 60%),
+            radial-gradient(520px 260px at 70% 35%, rgba(255, 255, 255, 0.04), transparent 62%);
+          mix-blend-mode: screen;
+          opacity: 0.8;
+        }
+        .overlayVignette {
+          background: radial-gradient(120% 110% at 50% 20%, transparent 30%, rgba(0, 0, 0, 0.42) 100%);
+          opacity: 0.9;
+        }
+
+        .shine {
+          position: absolute;
+          top: -40%;
+          bottom: -40%;
+          width: 34%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.10),
+            rgba(255, 255, 255, 0.18),
+            rgba(255, 255, 255, 0.10),
+            transparent
+          );
+          transform: rotate(18deg);
+          filter: blur(0.4px);
+          opacity: 0.9;
+          mix-blend-mode: screen;
+        }
+
+        .grain {
+          position: absolute;
+          inset: 0;
+          opacity: 0.07;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
           background-size: 180px 180px;
+          pointer-events: none;
+        }
+
+        .content {
+          position: relative;
+          padding: 16px 16px;
+          min-height: 96px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          transform: translateZ(8px);
+        }
+
+        .left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        .avatarWrap {
+          position: relative;
+          width: 62px;
+          height: 62px;
+          flex: 0 0 auto;
+        }
+
+        .avatar {
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          overflow: hidden;
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          background: rgba(255, 255, 255, 0.04);
+          box-shadow:
+            0 18px 60px rgba(0, 0, 0, 0.55),
+            0 0 0 7px rgba(255, 255, 255, 0.04);
+        }
+
+        .avatarRing {
+          position: absolute;
+          inset: -10px;
+          border-radius: 999px;
+          background:
+            radial-gradient(closest-side, rgba(124, 255, 178, 0.18), transparent 58%),
+            radial-gradient(closest-side, rgba(120, 162, 255, 0.16), transparent 60%);
+          filter: blur(0.4px);
+          opacity: 0.9;
+          pointer-events: none;
+        }
+
+        .titles {
+          min-width: 0;
+        }
+        .titleRow {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .title {
+          font-weight: 950;
+          letter-spacing: 0.01em;
+          font-size: 18px;
+          color: rgba(234, 240, 255, 0.98);
+          text-shadow: 0 12px 36px rgba(0, 0, 0, 0.60);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 52vw;
+        }
+        .pill {
+          font-size: 11px;
+          font-weight: 900;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: rgba(234, 240, 255, 0.9);
+          backdrop-filter: blur(10px);
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.25);
+          white-space: nowrap;
+        }
+        .subtitle {
+          margin-top: 6px;
+          font-size: 12px;
+          font-weight: 800;
+          opacity: 0.76;
+          letter-spacing: 0.02em;
+          color: rgba(234, 240, 255, 0.92);
+        }
+
+        .right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex: 0 0 auto;
+        }
+
+        .status {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 12px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.06);
+          color: rgba(234, 240, 255, 0.92);
+          font-size: 12px;
+          font-weight: 900;
+          backdrop-filter: blur(12px);
+          box-shadow: 0 18px 52px rgba(0, 0, 0, 0.28);
+        }
+        .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: rgba(124, 255, 178, 0.95);
+          box-shadow: 0 0 0 7px rgba(124, 255, 178, 0.08);
+        }
+
+        .stroke {
+          position: absolute;
+          inset: 0;
+          border-radius: 28px;
+          pointer-events: none;
+          box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+            inset 0 -40px 80px rgba(0, 0, 0, 0.18);
+        }
+
+        .gloss {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), transparent 40%);
+          opacity: 0.35;
+          mix-blend-mode: screen;
+        }
+
+        @media (max-width: 420px) {
+          .content {
+            padding: 14px 14px;
+          }
+          .avatarWrap {
+            width: 58px;
+            height: 58px;
+          }
+          .title {
+            font-size: 17px;
+          }
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 }
