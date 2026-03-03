@@ -218,6 +218,48 @@ export default function CheckoutClient() {
     // сразу редиректим пользователя на страницу с инструкцией/текстом
     router.push(`/access/${itemId}`);
   }
+  
+  function isDealActive() {
+    if (!invoiceId) return false;
+    const s = String(payStatus || "").toLowerCase();
+    return !(s === "paid" || s === "expired" || s === "cancelled");
+  }
+
+  async function confirmLeave(): Promise<boolean> {
+    const message =
+      "Вы реально хотите покинуть окно операции?\nОперация будет завершена.";
+
+    // @ts-ignore
+    const tg =
+      typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
+
+    if (tg && typeof tg.showConfirm === "function") {
+      return await new Promise<boolean>((resolve) => {
+        try {
+          tg.showConfirm(message, (ok: boolean) => resolve(!!ok));
+        } catch {
+          resolve(window.confirm(message));
+        }
+      });
+    }
+
+    return window.confirm(message);
+  }
+
+  async function goToMenu() {
+    if (isDealActive()) {
+      const ok = await confirmLeave();
+      if (!ok) return;
+
+      safeClearSaved();
+      setInvoiceId(null);
+      setPayUrl("");
+      setUrlKind("");
+      setPayStatus("");
+    }
+
+    router.push("/");
+  }
 
   // Восстановление состояния при старте
   useEffect(() => {
@@ -310,18 +352,32 @@ export default function CheckoutClient() {
       <div className="bg" aria-hidden />
       <div className="shell">
         <div className="topbar">
-          <div className="brand">
-            <div className="logo" aria-hidden />
-            <div className="brandText">
-              <div className="appName">SECURE CHECKOUT</div>
-              <div className="appSub">Операция оплаты • Товар #{itemId || 0}</div>
-            </div>
-          </div>
-          <div className={`badge ${badgeKind}`}>
-            <span className="dot" aria-hidden />
-            <span>{statusLabel}</span>
-          </div>
-        </div>
+  <div className="brand">
+    <div className="logo" aria-hidden />
+    <div className="brandText">
+      <div className="appName">SECURE CHECKOUT</div>
+      <div className="appSub">
+        Операция оплаты • Товар #{itemId || 0}
+      </div>
+    </div>
+  </div>
+
+  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+    <button
+      className="topBtn"
+      onClick={() => {
+        goToMenu();
+      }}
+    >
+      В главное меню
+    </button>
+
+    <div className={`badge ${badgeKind}`}>
+      <span className="dot" aria-hidden />
+      <span>{statusLabel}</span>
+    </div>
+  </div>
+</div>
 
         <div className="grid">
           <div className="panel main">
@@ -924,6 +980,39 @@ export default function CheckoutClient() {
         .supportBtn:active {
           transform: scale(0.98);
         }
+          
+        .topRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topBtn {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(234,240,255,0.92);
+  padding: 10px 12px;
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 120ms ease, background 160ms ease, border-color 160ms ease;
+  user-select: none;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 16px 42px rgba(0,0,0,0.25);
+}
+
+.topBtn:hover {
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.09);
+  transform: translateY(-1px);
+}
+
+.topBtn:active {
+  transform: scale(0.98);
+}
+  
       `}</style>
     </div>
   );
