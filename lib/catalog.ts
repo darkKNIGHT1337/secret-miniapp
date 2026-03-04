@@ -9,7 +9,7 @@ export type CatalogItem = {
   details: string[];          // пункты для "Подробнее" (bottom-sheet)
 
   tag?: "TOP" | "PRO" | "VIP" | "NEW" | "LIMITED";
-  priceUAH: number;
+  priceUSD: number;
   amountUSDT: string;
 
   icon?: "doc" | "bolt" | "crown" | "shield" | "star" | "bot";
@@ -28,7 +28,7 @@ export const CATALOG: CatalogItem[] = [
       "Моментальная выдача после оплаты.",
     ],
     tag: "TOP",
-    priceUAH: 199,
+    priceUSD: 199,
     amountUSDT: "15",
     icon: "doc",
   },
@@ -44,7 +44,7 @@ export const CATALOG: CatalogItem[] = [
       "Подходит под Telegram-реализацию.",
     ],
     tag: "VIP",
-    priceUAH: 999,
+    priceUSD: 999,
     amountUSDT: "70",
     icon: "star",
   },
@@ -60,7 +60,7 @@ export const CATALOG: CatalogItem[] = [
       "Интеграция с твоим mini app.",
     ],
     tag: "VIP",
-    priceUAH: 1999,
+    priceUSD: 1999,
     amountUSDT: "150",
     icon: "bot",
   },
@@ -76,7 +76,7 @@ export const CATALOG: CatalogItem[] = [
       "Рекомендации по чистоте устройства.",
     ],
     tag: "VIP",
-    priceUAH: 1499,
+    priceUSD: 1499,
     amountUSDT: "110",
     icon: "shield",
   },
