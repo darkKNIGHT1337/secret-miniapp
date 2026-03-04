@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { tgHaptic } from "@/lib/tg";
 import { getPendingOrder } from "@/lib/orderStore";
+import * as React from "react";
 
 export type NavKey = "sections" | "favorites" | "order" | "profile" | "support";
 
@@ -74,7 +75,7 @@ export default function BottomNav({
     };
   }, []);
 
-  const items: Array<{ key: NavKey; label: string; icon: JSX.Element }> = [
+  const items: Array<{ key: NavKey; label: string; icon: React.ReactNode }> = [
     { key: "sections", label: "Разделы", icon: <Icon name="grid" /> },
     { key: "favorites", label: "Избранное", icon: <Icon name="heart" /> },
     ...(showOrder ? [{ key: "order" as const, label: "Статус", icon: <Icon name="receipt" /> }] : []),

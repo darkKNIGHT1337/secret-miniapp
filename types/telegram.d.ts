@@ -21,6 +21,8 @@ declare global {
         };
         openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
         openTelegramLink?: (url: string) => void;
+
+        showConfirm?: (message: string, callback: (ok: boolean) => void) => void;
       };
     };
   }

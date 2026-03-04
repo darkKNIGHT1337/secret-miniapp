@@ -242,14 +242,22 @@ setPendingOrder({
     const tg =
       typeof window !== "undefined" ? window?.Telegram?.WebApp : undefined;
 
-    if (tg && typeof tg.showConfirm === "function") {
+    const tga: any = tg;
+if (tga && typeof tga.showConfirm === "function") {
       return await new Promise<boolean>((resolve) => {
-        try {
-          tg.showConfirm(message, (ok: boolean) => resolve(!!ok));
-        } catch {
-          resolve(window.confirm(message));
-        }
-      });
+  try {
+    const tga = tg as any;
+
+    if (tga?.showConfirm && typeof tga.showConfirm === "function") {
+      tga.showConfirm(message, (ok: boolean) => resolve(!!ok));
+      return;
+    }
+
+    resolve(window.confirm(message));
+  } catch {
+    resolve(window.confirm(message));
+  }
+});
     }
 
     return window.confirm(message);

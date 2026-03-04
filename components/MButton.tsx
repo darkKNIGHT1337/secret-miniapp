@@ -1,29 +1,46 @@
 "use client";
 
-import { motion } from "framer-motion";
+import * as React from "react";
 import { tgHaptic } from "@/lib/tg";
+
+type HapticKind =
+  | "selection"
+  | "light"
+  | "medium"
+  | "heavy"
+  | "success"
+  | "warning"
+  | "error";
+
+type Props = Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  "onClick"
+> & {
+  haptic?: HapticKind;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+};
 
 export default function MButton({
   children,
   className = "",
+  haptic = "medium",
   onClick,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  onClick?: () => void;
-}) {
+  ...rest
+}: Props) {
   return (
-    <motion.button
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.97 }}
-      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      className={className}
-      onClick={() => {
-        tgHaptic("medium");
-        onClick?.();
+    <button
+      className={
+        "transition-transform duration-200 ease-out " +
+        "active:scale-[0.985] hover:-translate-y-[1px] " +
+        className
+      }
+      onClick={(e) => {
+        tgHaptic(haptic);
+        onClick?.(e);
       }}
+      {...rest}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }
