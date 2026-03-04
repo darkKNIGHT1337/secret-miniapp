@@ -110,9 +110,7 @@ export default function HomePage() {
                     <div className="small mt-1">{s.sub}</div>
                   </div>
 
-                  <div className="mt-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-[12px] text-white/70">
-                    →
-                  </div>
+                
                 </div>
               </motion.button>
             ))}
