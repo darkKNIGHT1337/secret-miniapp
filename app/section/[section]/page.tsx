@@ -68,7 +68,7 @@ export default function SectionPage() {
                     <div className="small mt-1">{item.subtitle}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[16px] font-bold">{item.priceUAH} ₴</div>
+                    <div className="text-[16px] font-bold">${item.priceUSD}</div>
                     <div className="small">к оплате</div>
                   </div>
                 </div>
