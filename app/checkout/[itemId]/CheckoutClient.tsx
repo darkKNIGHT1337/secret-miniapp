@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { setPendingOrder, clearPendingOrder } from "@/lib/orderStore";
 
 type PayStatus =
   | ""
@@ -150,6 +151,7 @@ export default function CheckoutClient() {
       if (saved) safeSetSaved({ ...saved, status });
 
       if (status === "paid") {
+        clearPendingOrder();
         safeClearSaved();
         // прежняя логика: раньше мы тут делали router.push,
         // но в текущем flow мы НЕ делаем автопереход, оставляем переход контролируемым пользователем
@@ -176,6 +178,13 @@ export default function CheckoutClient() {
       });
 
       const data = await res.json();
+      const inv = (data?.result ?? data);
+
+setPendingOrder({
+  invoiceId: String(inv.invoice_id),
+  payUrl: String(inv.pay_url),
+  createdAt: Date.now(),
+});
 
       if (!res.ok) {
         alert(data?.error || "Ошибка создания счета");

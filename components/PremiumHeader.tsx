@@ -1,185 +1,85 @@
 "use client";
 
 import Image from "next/image";
+import { motion } from "framer-motion";
+import { useTgUser } from "@/lib/useTgUser";
 
 export default function PremiumHeader() {
+  const user = useTgUser();
+  const avatar = user?.photo_url || "/brand/avatar.png";
+  const title =
+    (user?.first_name ? user.first_name : "Secret Shop") +
+    (user?.last_name ? ` ${user.last_name}` : "");
+
   return (
-    <div className="hero">
-      {/* banner background */}
-      <div className="banner" aria-hidden>
+    <div className="lux-card lux-outline p-4">
+      <div className="flex items-center gap-3">
+        <div className="avatar-wrap">
+          <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-white/10">
+            <Image src={avatar} alt="Avatar" fill className="object-cover" priority />
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="h2 truncate">{title}</div>
+          <div className="small truncate">@{user?.username ?? "secretsshoppp_bot"}</div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+          <div className="online-wrap">
+            <span className="online-dot" />
+            <span className="text-[12px] font-semibold text-white/75">online</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Banner – premium cover + light sweep, height увеличили чтобы текст не резало так жестко */}
+      <div className="relative mt-4 h-[168px] overflow-hidden rounded-2xl border border-white/10">
         <Image
           src="/brand/banner.jpg"
-          alt=""
+          alt="Banner"
           fill
+          className="object-cover"
+          style={{ objectPosition: "center" }}
           priority
-          sizes="(max-width: 768px) 100vw, 900px"
-          style={{ objectFit: "cover" }}
         />
-        <div className="bannerOverlay" />
+
+        {/* overlays for readability + depth */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/14 to-black/55" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+
+        {/* premium light sweep */}
+        <motion.div
+  className="pointer-events-none absolute left-[-130%] top-0 h-full w-[150%]"
+  style={{
+    background:
+      "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 35%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 65%, transparent 100%)",
+    opacity: 0.45,
+  }}
+  animate={{ x: ["0%", "170%"] }}
+  transition={{
+    duration: 2.5,      // медленно проходит
+    repeat: Infinity,
+    repeatDelay: 2.5,   // редкий эффект
+    ease: "easeInOut",
+  }}
+/>
+<motion.div
+  className="pointer-events-none absolute left-[-140%] top-0 h-full w-[160%]"
+  style={{
+    background:
+      "linear-gradient(90deg, transparent 0%, rgba(34,197,94,0.05) 45%, rgba(34,197,94,0.08) 50%, rgba(34,197,94,0.05) 55%, transparent 100%)",
+    opacity: 0.35,
+  }}
+  animate={{ x: ["0%", "180%"] }}
+  transition={{
+    duration: 6,
+    repeat: Infinity,
+    repeatDelay: 8,
+    ease: "linear",
+  }}
+/>
       </div>
-
-      <div className="heroTop">
-        <div className="left">
-          <div className="avatar">
-            <Image
-              src="/brand/avatar.png"
-              alt="Secret Shop"
-              fill
-              priority
-              sizes="56px"
-              style={{ objectFit: "cover" }}
-            />
-          </div>
-
-          <div className="titles">
-            <div className="titleRow">
-              <div className="title">Secret Shop</div>
-              <span className="pill">mini app</span>
-            </div>
-
-            {/* ВАЖНО: тут мы НЕ показываем подсказку “свайпай…” — она удалена */}
-            <div className="subtitle">Premium access • Private catalog</div>
-          </div>
-        </div>
-
-        <div className="right">
-          <div className="status">
-            <span className="dot" aria-hidden />
-            <span>online</span>
-          </div>
-
-          {/* Kyiv time УДАЛЁН — его нет */}
-        </div>
-      </div>
-
-      <style jsx>{`
-        .hero {
-          position: relative;
-          border-radius: 26px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(17, 24, 38, 0.55);
-          backdrop-filter: blur(14px);
-          box-shadow: 0 34px 110px rgba(0, 0, 0, 0.55);
-          overflow: hidden;
-        }
-
-        .banner {
-          position: absolute;
-          inset: 0;
-        }
-        .bannerOverlay {
-          position: absolute;
-          inset: 0;
-          background:
-            radial-gradient(900px 380px at 20% 0%, rgba(124, 255, 178, 0.18), transparent 60%),
-            radial-gradient(700px 380px at 85% 25%, rgba(120, 162, 255, 0.18), transparent 60%),
-            linear-gradient(180deg, rgba(7, 10, 15, 0.25), rgba(7, 10, 15, 0.80) 70%, rgba(7, 10, 15, 0.95));
-        }
-
-        .heroTop {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 14px;
-          padding: 16px 16px;
-          min-height: 92px;
-        }
-
-        .left {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          min-width: 0;
-        }
-
-        .avatar {
-          position: relative;
-          width: 56px;
-          height: 56px;
-          border-radius: 999px;
-          overflow: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          box-shadow:
-            0 16px 44px rgba(0, 0, 0, 0.45),
-            0 0 0 6px rgba(255, 255, 255, 0.04);
-          background: rgba(255, 255, 255, 0.04);
-          flex: 0 0 auto;
-        }
-
-        .titles {
-          min-width: 0;
-        }
-
-        .titleRow {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .title {
-          font-weight: 950;
-          letter-spacing: 0.01em;
-          font-size: 18px;
-          color: rgba(234, 240, 255, 0.98);
-          text-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 48vw;
-        }
-
-        .pill {
-          font-size: 11px;
-          font-weight: 900;
-          padding: 6px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          background: rgba(255, 255, 255, 0.06);
-          color: rgba(234, 240, 255, 0.9);
-          backdrop-filter: blur(10px);
-          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.25);
-          white-space: nowrap;
-        }
-
-        .subtitle {
-          margin-top: 6px;
-          font-size: 12px;
-          font-weight: 800;
-          opacity: 0.75;
-          letter-spacing: 0.02em;
-          color: rgba(234, 240, 255, 0.9);
-        }
-
-        .right {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          flex: 0 0 auto;
-        }
-
-        .status {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 9px 12px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          background: rgba(255, 255, 255, 0.06);
-          color: rgba(234, 240, 255, 0.92);
-          font-size: 12px;
-          font-weight: 900;
-          backdrop-filter: blur(10px);
-          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.25);
-        }
-        .dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: rgba(124, 255, 178, 0.95);
-          box-shadow: 0 0 0 6px rgba(124, 255, 178, 0.08);
-        }
-      `}</style>
     </div>
   );
 }
