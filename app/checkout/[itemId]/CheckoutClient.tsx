@@ -168,14 +168,12 @@ export default function CheckoutClient() {
       const amount = "1"; // TODO: заменить на динамическую цену через PRODUCTS, если настроишь
 
       const res = await fetch("/api/cryptobot/create-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          description: `Оплата товара #${itemId}`,
-          payload: `item_${itemId}_${Date.now()}`,
-        }),
-      });
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    itemId,
+  }),
+});
 
       const data = await res.json();
       const inv = (data?.result ?? data);

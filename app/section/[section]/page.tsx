@@ -13,13 +13,15 @@ const TITLES: Record<CatalogSection, string> = {
   services: "Услуги",
 };
 
+const SUPPORT_USERNAME = "cantworry";
+
 function BackButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[13px] text-white/80"
+      className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/85 transition hover:bg-white/10"
     >
-      <span className="text-[14px]">←</span> Назад
+      ← Назад
     </button>
   );
 }
@@ -29,10 +31,33 @@ export default function SectionPage() {
   const params = useParams<{ section: string }>();
   const section = (params.section as CatalogSection) || "manuals";
 
-  const items = useMemo(() => CATALOG.filter((x) => x.section === section), [section]);
+  const items = useMemo(
+    () => CATALOG.filter((x) => x.section === section),
+    [section]
+  );
+
+  const openSupport = () => {
+    const tg = typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
+    const url = `https://t.me/${SUPPORT_USERNAME}`;
+
+    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+    else window.open(url, "_blank");
+  };
+
+  const handleCardClick = (itemId: number) => {
+    tgHaptic("light");
+
+    if (section === "services") {
+      openSupport();
+      return;
+    }
+
+    router.push(`/product/${itemId}`);
+  };
 
   return (
     <>
+      <div className="lux-grain" />
       <div className="lux-grid" />
 
       <div className="mx-auto w-full max-w-[760px] px-4 pt-4 safe-bottom">
@@ -43,40 +68,66 @@ export default function SectionPage() {
               router.push("/");
             }}
           />
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80">
             {items.length} шт
           </div>
         </div>
 
-        <div className="mt-4">
+        <div className="mt-5">
           <div className="h1">{TITLES[section] ?? "Раздел"}</div>
-          <div className="p mt-1">Выбирай товар — откроется отдельная страница.</div>
+          <div className="p mt-1">
+            {section === "services"
+              ? "Выбери услугу — откроется личка для обсуждения."
+              : "Выбирай товар — откроется отдельная страница."}
+          </div>
+        </div>
 
-          <div className="mt-4 space-y-3">
-            {items.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  tgHaptic("light");
-                  router.push(`/product/${item.id}`);
-                }}
-                className="lux-card lux-outline w-full p-4 text-left"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="h2 truncate">{item.title}</div>
-                    <div className="small mt-1">{item.subtitle}</div>
+        <div className="mt-5 grid gap-4">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => handleCardClick(item.id)}
+              className="lux-card lux-outline w-full p-4 text-left transition hover:bg-white/[0.06]"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-[15px] font-extrabold text-white">
+                    {item.title}
                   </div>
-                  <div className="text-right">
-                    <div className="text-[16px] font-bold">${item.priceUSD}</div>
-                    <div className="small">к оплате</div>
+                  <div className="mt-2 text-sm text-white/60">
+                    {item.subtitle}
                   </div>
                 </div>
-              </button>
-            ))}
-          </div>
 
-          <div className="mt-8 text-center text-[12px] text-white/45">@secretsshoppp_bot</div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[15px] font-extrabold whitespace-nowrap text-white">
+                    {section === "services" ? "ДОГОВОРНАЯ" : `$${item.priceUSD}`}
+                  </div>
+
+                  <div className="mt-0.5 text-[11px] text-white/45 whitespace-nowrap">
+                    {section === "services" ? "в ЛС" : "к оплате"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <div className="text-xs text-white/45">
+                  {section === "services"
+                    ? "Стоимость обсуждается в личных сообщениях"
+                    : "Моментальная выдача после оплаты"}
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-extrabold text-white">
+                  {section === "services" ? "Написать в ЛС" : "Открыть"}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-10 text-center text-[12px] text-white/45">
+          @secretsshoppp_bot
         </div>
       </div>
 

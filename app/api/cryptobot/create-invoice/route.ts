@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { CATALOG } from "@/lib/catalog";
 
 const API = "https://pay.crypt.bot/api";
 
 export async function POST(req: Request) {
   try {
     const token = process.env.CRYPTOBOT_TOKEN;
+
     if (!token) {
       return NextResponse.json(
         { error: "Missing CRYPTOBOT_TOKEN" },
@@ -13,9 +15,35 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const amount = String(body?.amount ?? "1");
-    const description = String(body?.description ?? "Оплата");
-    const payload = String(body?.payload ?? "");
+    const itemId = Number(body?.itemId);
+
+    if (!itemId) {
+      return NextResponse.json(
+        { error: "Missing itemId" },
+        { status: 400 }
+      );
+    }
+
+    const item = CATALOG.find((x) => x.id === itemId);
+
+    if (!item) {
+      return NextResponse.json(
+        { error: "Item not found" },
+        { status: 404 }
+      );
+    }
+
+    // У услуг нет фиксированной оплаты
+    if (item.section === "services") {
+      return NextResponse.json(
+        { error: "Services are negotiable and cannot be paid automatically." },
+        { status: 400 }
+      );
+    }
+
+    const amount = String(item.priceUSD);
+    const description = `Оплата: ${item.title}`;
+    const payload = `item_${itemId}_${Date.now()}`;
 
     const r = await fetch(`${API}/createInvoice`, {
       method: "POST",
@@ -44,44 +72,32 @@ export async function POST(req: Request) {
 
     const invoice = data.result;
 
-    // ✅ Берём ТОЛЬКО web/https варианты, чтобы НЕ прыгать в t.me/чат
-    const webUrl =
+    const bestUrl =
       invoice?.web_app_pay_url ||
       invoice?.pay_url ||
       invoice?.mini_app_invoice_url ||
-      "";
+      invoice?.bot_invoice_url;
 
-    // Если вдруг API вернул только bot_invoice_url (t.me) — лучше явно сообщить, чем ломать UX
-    if (!webUrl || !/^https?:\/\//i.test(webUrl)) {
+    if (!bestUrl) {
       return NextResponse.json(
-        {
-          error:
-            "CryptoBot did not return a web payment URL (https). It returned a telegram bot link instead.",
-          invoice_id: invoice?.invoice_id,
-          kind:
-            invoice?.web_app_pay_url
-              ? "web_app_pay_url"
-              : invoice?.pay_url
-              ? "pay_url"
-              : invoice?.mini_app_invoice_url
-              ? "mini_app_invoice_url"
-              : invoice?.bot_invoice_url
-              ? "bot_invoice_url"
-              : "unknown",
-        },
+        { error: "No pay url in invoice", invoice },
         { status: 502 }
       );
     }
 
     return NextResponse.json({
       invoice_id: invoice.invoice_id,
-      pay_url: webUrl,
+      pay_url: bestUrl,
       status: invoice.status,
       kind: invoice?.web_app_pay_url
         ? "web_app_pay_url"
         : invoice?.pay_url
         ? "pay_url"
-        : "mini_app_invoice_url",
+        : invoice?.mini_app_invoice_url
+        ? "mini_app_invoice_url"
+        : invoice?.bot_invoice_url
+        ? "bot_invoice_url"
+        : "other",
     });
   } catch (e: any) {
     return NextResponse.json(
